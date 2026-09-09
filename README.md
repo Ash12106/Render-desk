@@ -1,253 +1,408 @@
 # Support Ops Desk
 
-Support Ops Desk is an internal-style service ticket management application for customers, support staff, and administrators. Its primary responsibility is to manage ticket intake, assignment, customer communication, lifecycle tracking, audit history, and recoverable deletion on a React, Express, and MongoDB stack.
+Support Ops Desk is an internal service-ticket management application used by customers, support staff, and administrators. It manages ticket intake, assignment, customer communication, lifecycle tracking, audit history, notifications, attachments, and recoverable deletion on a React, Express, and MongoDB stack.
 
-## Quick Start
+## 1. Enterprise README
 
 ### Prerequisites
 
-- Node.js `>= 22.x` for local development. The production Docker image uses Node.js `24`.
-- npm compatible with the selected Node.js installation.
-- MongoDB `7.x` or newer for local development, or Docker Desktop with Compose v2.
-- A modern browser: Chrome, Edge, Safari, or Firefox.
-- Repository access and permission to run local containers on the development machine.
-- No corporate VPN, IAM role, cloud account, or Kubernetes CLI is required by the current repository configuration. Production network and database access must be supplied by the deployment owner.
+- Node.js `>= 22.x` for local development. The production image uses Node.js `24`.
+- npm compatible with the selected Node.js version.
+- MongoDB `7.x` or Docker Desktop with Compose v2.
+- Modern browser: Chrome, Edge, Safari, or Firefox.
+- Repository access and local permission to run Docker containers.
+- No corporate VPN, IAM role, Kubernetes CLI, or cloud credential is required by the current repository. Production access must be supplied by the deployment owner.
 
-### Setup Instructions
+### Local setup
 
-1. **Clone the repository:**
+```bash
+git clone https://github.com/Ash12106/Support-Desk-Final.git
+cd Internship-main
+cp .env.example .env
+npm install
+npm run dev
+```
 
-   ```bash
-   git clone https://github.com/Ash12106/Support-Desk-Final.git
-   cd Internship-main
-   ```
-
-2. **Configure the local environment:**
-
-   ```bash
-   cp .env.example .env
-   ```
-
-   Set local values in `.env`. Do not commit `.env` or credentials.
-
-3. **Install dependencies:**
-
-   ```bash
-   npm install
-   ```
-
-4. **Start MongoDB** locally or use the Docker workflow below.
-
-5. **Start the development server:**
-
-   ```bash
-   npm run dev
-   ```
-
-6. **Verify the application:**
-
-   - Staff/admin login: `http://localhost:3000/login`
-   - Customer login and registration: `http://localhost:3000/customer/login`
-   - Database readiness: `http://localhost:3000/api/health/db`
-   - API documentation: `http://localhost:3000/api-docs`
-
-The health endpoint should return HTTP `200` with a connected MongoDB response.
-
-### Docker quick start
-
-Docker Compose runs the production build, MongoDB 7, and the single-node replica-set initializer:
+Start MongoDB locally before `npm run dev`, or use the Docker setup:
 
 ```bash
 docker compose up --build -d
 docker compose ps
-curl http://localhost:3000/api/health/db
+curl -fsS http://localhost:3000/api/health/db
 ```
 
-Expected state:
+Expected local URLs:
 
-- `app` is running and publishes port `3000`.
-- `mongo` is running and reports `healthy`.
-- `mongo-init` completes successfully once during startup.
-- `/api/health/db` reports a connected database.
+- Staff/admin login: `http://localhost:3000/login`
+- Customer login and registration: `http://localhost:3000/customer/login`
+- Database readiness: `http://localhost:3000/api/health/db`
+- Swagger UI: `http://localhost:3000/api-docs`
 
-Stop the stack while preserving data:
+### Environment variables
 
-```bash
-docker compose down
-```
+Copy `.env.example` to `.env`. Use placeholders or a secret manager for shared environments; never commit real credentials.
 
-Delete the database volume only when intentionally resetting all local data:
+| Variable                | Description                                       | Example                                 | Required                     |
+| ----------------------- | ------------------------------------------------- | --------------------------------------- | ---------------------------- |
+| `MONGO_URI`             | Preferred MongoDB connection string               | `mongodb://localhost:27017/support-ops` | Yes for local Node execution |
+| `MONGODB_URI`           | Backwards-compatible MongoDB variable             | Empty                                   | No                           |
+| `PORT`                  | HTTP port                                         | `3000`                                  | No                           |
+| `CORS_ORIGIN`           | Allowed browser origin                            | `http://localhost:3000`                 | Yes for shared/prod use      |
+| `ADMIN_PASSWORD`        | Startup-created admin password                    | `change-me-locally`                     | Yes; change before sharing   |
+| `GOOGLE_CLIENT_ID`      | Backend Google ID-token audience                  | Empty                                   | No                           |
+| `VITE_GOOGLE_CLIENT_ID` | Frontend Google OAuth client ID; build-time value | Empty                                   | No                           |
+| `NODE_ENV`              | Runtime mode                                      | `development` or `production`           | No                           |
 
-```bash
-docker compose down -v
-```
-
-## Architecture & Stack
-
-### System overview
+### Architecture overview
 
 ```mermaid
 flowchart LR
-    Customer[Customer browser] --> Web[React/Vite application]
-    Staff[Staff or admin browser] --> Web
-    Web --> API[Express API]
-    API --> Auth[Auth and role middleware]
+    Browser[Customer / staff / admin browser] --> Frontend[React + Vite frontend]
+    Frontend --> API[Express API]
+    API --> Auth[Authentication and role middleware]
     API --> Mongo[(MongoDB 7 replica set)]
     API --> Audit[Audit logs and notifications]
-    API --> Docs[Swagger UI /api-docs]
+    API --> Swagger[Swagger UI]
 ```
 
-### Core modules
+Core modules:
 
-- **Frontend:** `src/` contains React routes, layouts, ticket forms, dashboards, profile views, customer portal views, and shared UI components.
-- **API client:** `src/api/index.ts` centralizes browser requests and response handling.
-- **Server:** `server/index.ts` serves the API and compiled frontend, registers middleware, exposes Swagger, and performs startup migrations.
-- **Persistence:** `server/mongo.ts` defines MongoDB connection handling, schemas, migrations, and transactional operations.
-- **Notifications:** `server/notifications.ts` manages customer notification records.
-- **Status logic:** `server/status.ts` centralizes ticket lifecycle and activity-state behavior.
-- **Tests:** `server/*.test.ts` covers API, notifications, and status behavior; `src/routes/TicketsDashboard.test.tsx` covers dashboard behavior.
-- **Deployment:** `Dockerfile` creates the frontend/server production image; `docker-compose.yml` supplies the app, MongoDB, replica-set initialization, and persistent volume.
+- `src/`: React routes, dashboards, customer portal, ticket forms, profiles, and shared UI.
+- `src/api/index.ts`: browser API client.
+- `server/index.ts`: Express API, middleware, Swagger, static frontend serving, and startup migrations.
+- `server/mongo.ts`: MongoDB connection, schemas, migrations, and transactions.
+- `server/notifications.ts`: customer notification records.
+- `server/status.ts`: lifecycle transition rules.
+- `server/*.test.ts` and `src/routes/TicketsDashboard.test.tsx`: API, notification, status, and dashboard tests.
+- `Dockerfile` and `docker-compose.yml`: production image and MongoDB replica-set deployment.
 
-### Primary business flows
+### Testing and quality checks
 
-- Customer registration, login, ticket creation, status tracking, notifications, comments, and profile updates.
-- Staff assignment, ticket search/filtering, lifecycle updates, activity-state updates, comments, attachments, and availability.
-- Administrator user management, role/team/branch updates, availability-aware assignment, bulk assignment, reporting, and deleted-ticket restoration.
-- Ticket lifecycle states: `Open`, `In Progress`, `Resolved`, `Closed`.
-- Activity states: `Unread`, `Read`, `Awaiting customer response`, `Awaiting technician response`.
-
-## Configuration Variables
-
-Copy `.env.example` to `.env` for local use. Values below are examples only; production secrets must come from the deployment secret-management process.
-
-| Variable                | Description                                             | Default / Example                       | Required                   |
-| ----------------------- | ------------------------------------------------------- | --------------------------------------- | -------------------------- |
-| `MONGO_URI`             | Preferred MongoDB connection string                     | `mongodb://localhost:27017/support-ops` | Yes                        |
-| `MONGODB_URI`           | Backwards-compatible MongoDB variable                   | Empty                                   | No                         |
-| `PORT`                  | HTTP port exposed by the Node server                    | `3000`                                  | No                         |
-| `CORS_ORIGIN`           | Exact allowed browser origin                            | `http://localhost:3000`                 | Yes for shared/prod use    |
-| `ADMIN_PASSWORD`        | Password for the migration-created admin account        | `admin@2026` locally                    | Yes; change before sharing |
-| `GOOGLE_CLIENT_ID`      | Backend Google ID-token verification client ID          | Empty                                   | No                         |
-| `VITE_GOOGLE_CLIENT_ID` | Frontend Google OAuth client ID; embedded at build time | Empty                                   | No                         |
-| `NODE_ENV`              | Runtime mode used by the server                         | `development` or `production`           | No                         |
-
-Google sign-in requires the same web OAuth client ID in both Google variables and an exact origin registration in Google Cloud Console. Rebuild Docker after changing `VITE_GOOGLE_CLIENT_ID`.
-
-## Testing & Code Quality
-
-Run all checks before opening a pull request or handing off a build:
+Run these commands before a pull request:
 
 ```bash
-# TypeScript type check
 npm run lint
-
-# ESLint
 npm run lint:eslint
-
-# Unit and API test suite
-npm test
-
-# Formatting validation
 npm run format:check
-
-# Production frontend and server build
+npm test
 npm run build
-
-# Dependency advisory review
 npm audit
 ```
 
-Current repository test coverage includes four Vitest files and 31 passing tests in the verified local run. The production build completes successfully. Vite may report a non-blocking warning when the main browser bundle exceeds 500 kB; optimize later with route-level dynamic imports and Rollup chunk configuration.
+The verified local suite contains 4 Vitest files and 31 passing tests. The build may emit a non-blocking Vite warning when the main browser bundle exceeds 500 kB.
 
-### Live smoke checks
+### Deployment and CI/CD
 
-After starting Docker, run:
+The repository currently has no `.github/workflows` CI/CD pipeline. The supported deployment path is a manual Docker Compose release:
 
 ```bash
+npm run lint
+npm run lint:eslint
+npm run format:check
+npm test
+npm run build
+docker compose up --build -d
 docker compose ps
 curl -fsS http://localhost:3000/api/health/db
-curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:3000/api/tickets
 ```
 
-Expected results are a healthy MongoDB service, a successful health response, and HTTP `401` for the protected ticket route without a bearer token. A repeated health loop is useful for detecting startup instability:
+The Docker image builds the frontend and bundled server with Node.js 24 Alpine. The runtime serves `dist/server.cjs` on port `3000`. MongoDB 7 runs as a single-node replica set with the persistent `mongo_data` volume. Before public exposure, add HTTPS, a reverse proxy or managed platform, restricted `CORS_ORIGIN`, and deployment-secret injection.
+
+### Ownership and support
+
+The repository does not currently define formal ownership or an on-call rotation. Complete these values for internal handoff:
+
+- **Engineering team:** `[team or squad]`
+- **Support channel:** `[#support-ops-channel]`
+- **Primary maintainer:** `[@maintainer]`
+- **Incident escalation:** `[pager, ticket queue, or service owner]`
+- **Production URL:** `[deployment URL]`
+
+---
+
+## 2. Architecture Decision Record: MongoDB Replica Set
+
+- **Status:** Accepted for the current application
+- **Date:** 2026-09-09
+- **Decision owner:** Support Ops Desk engineering owner
+
+### Context
+
+The application creates related records across users, customers, tickets, comments, notifications, audit logs, and the deleted-ticket archive. Registration, ticket creation, deletion, and restoration require atomic multi-document writes. A standalone MongoDB process does not provide the transaction topology required by these workflows, while the application must remain simple to run locally and in Docker.
+
+### Decision
+
+Use MongoDB 7 configured as a single-node replica set for local and Compose-based deployments. Mongoose provides schema and connection management, while the application uses transactions for multi-document operations. Docker Compose starts MongoDB with `--replSet rs0` and runs a one-shot initializer before the app container starts.
+
+### Rationale
+
+- Supports the existing transactional write model without introducing a second database system.
+- Preserves a simple document model for tickets, comments, audit records, notifications, and customer profiles.
+- Matches MongoDB Atlas replica-set behavior closely enough for development and integration testing.
+- Keeps local onboarding reproducible with one Compose command.
+
+### Consequences
+
+**Benefits**
+
+- Atomic registration, ticket, archive, and restore workflows.
+- Natural document representation for variable ticket fields and attachments.
+- Persistent local data through the `mongo_data` Docker volume.
+- Clear health and initialization checks.
+
+**Costs and risks**
+
+- Local MongoDB setup is more complex than a standalone process.
+- A single-node replica set is not high availability; production must use an appropriately sized managed or clustered deployment.
+- Transaction behavior depends on correct session handling and replica-set readiness.
+- MongoDB connection, storage, and transaction metrics require operational monitoring.
+
+**Revisit when:** production scale, multi-region recovery, reporting workloads, or retention requirements exceed the current single-node/document-store design.
+
+---
+
+## 3. API Contract Overview: Customer Registration
+
+### Endpoint
+
+`POST /api/customer-auth/register`
+
+Creates a customer profile and customer user account in one MongoDB transaction.
+
+### Authentication
+
+Public endpoint. No bearer token is required.
+
+### Request headers
+
+```http
+Content-Type: application/json
+```
+
+### Request payload
+
+```json
+{
+  "name": "Asha Patel",
+  "email": "asha.patel@example.com",
+  "username": "asha.patel",
+  "password": "replace-with-a-local-password"
+}
+```
+
+Validation rules:
+
+- `name`: trimmed string, minimum 2 characters.
+- `email`: valid email address; stored in lowercase.
+- `username`: trimmed string, 3 to 40 characters.
+- `password`: minimum 8 characters; stored only as a bcrypt hash.
+
+### Success response: `201 Created`
+
+The response contains the newly created user document. The exact MongoDB-generated `_id` values can vary by environment; sensitive password material is not returned.
+
+```json
+{
+  "_id": "65f000000000000000000001",
+  "username": "asha.patel",
+  "role": "customer",
+  "customerId": "65f000000000000000000002"
+}
+```
+
+### Error responses
+
+| Status | Condition                        | Response shape                                                                                        |
+| ------ | -------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `400`  | Invalid payload                  | `{ "success": false, "message": "Validation failed", "fields": {}, "data": null }`                    |
+| `409`  | Username or email already exists | `{ "success": false, "message": "...", "data": null }`                                                |
+| `503`  | MongoDB unavailable              | `{ "success": false, "message": "Service temporarily unavailable (database offline)", "data": null }` |
+| `500`  | Unexpected server failure        | `{ "success": false, "message": "Unexpected server failure", "data": null }`                          |
+
+### Example
 
 ```bash
-for i in {1..100}; do curl -fsS http://localhost:3000/api/health/db >/dev/null; done
+curl -X POST http://localhost:3000/api/customer-auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Asha Patel",
+    "email": "asha.patel@example.com",
+    "username": "asha.patel",
+    "password": "local-password-123"
+  }'
 ```
 
-## API and Operational Endpoints
+---
 
-Protected endpoints currently use the development authentication header `Authorization: Bearer <user-id>`.
+## 4. Developer Onboarding and Troubleshooting Guide
 
-- `GET /api/health/db`: MongoDB connectivity and readiness.
-- `GET /api-docs`: Swagger UI.
-- `POST /api/auth/login`: staff/admin login.
-- `POST /api/customer-auth/register`: customer registration.
-- `GET /api/tickets`: staff/admin ticket list with search, filters, pagination, and sorting.
-- `GET /api/tickets/stats`: dashboard metrics.
-- `POST /api/tickets`: staff/admin ticket creation.
-- `GET /api/tickets/:id`: ticket, comments, audit log, assignment, and attachments.
-- `PUT /api/tickets/:id`: ticket updates subject to role and assignment rules.
-- `DELETE /api/tickets/:id`: archive a ticket into `deleted_tickets`.
-- `GET /api/admin/deleted-tickets`: administrator archive listing.
-- `POST /api/admin/deleted-tickets/:id/restore`: administrator ticket restore.
-- `GET /api/customer/tickets`: authenticated customer ticket list.
-- `POST /api/customer/tickets`: authenticated customer ticket creation.
-- `GET /api/customer/notifications`: authenticated customer notifications.
+### First-day checklist
 
-See `/api-docs` and `SUPPORT_DESK_GUIDE.md` for the complete route and workflow reference.
+1. Install Node.js 22+ and Docker Desktop with Compose v2.
+2. Clone the repository and copy `.env.example` to `.env`.
+3. Start the stack with `docker compose up --build -d`.
+4. Verify `docker compose ps` and `/api/health/db`.
+5. Run `npm test`, `npm run lint`, and `npm run lint:eslint`.
+6. Review `SUPPORT_DESK_GUIDE.md` and `/api-docs`.
 
-## Deployment & CI/CD Pipeline
+### Generate local mock data
 
-### Current deployment path
+The seed command creates sample customers, tickets, comments, and audit logs. It creates up to 12 customers and 50 tickets and does not delete existing data.
 
-There is no `.github/workflows` CI/CD pipeline in the current repository. Deployment is currently a manual, Docker Compose-based flow:
+```bash
+npm run seed
+```
 
-1. Run the quality checks listed above.
-2. Build and start the production stack:
+For a clean Docker database reset, use this only when existing local data can be discarded:
 
-   ```bash
-   docker compose up --build -d
-   ```
+```bash
+docker compose down -v
+docker compose up --build -d
+npm run seed
+```
 
-3. Verify containers and database readiness:
+### Common setup errors
+
+#### Error 1: `npm ci` reports a lockfile mismatch or an unsupported Node engine
+
+**Cause:** The dependency lockfile and `package.json` are not synchronized, or Node.js is below the supported version.
+
+**Resolution:**
+
+```bash
+node --version
+npm --version
+npm install
+npm run lint
+```
+
+Use Node.js 22 or newer. Docker uses Node.js 24 and installs from the committed lockfile.
+
+#### Error 2: `mongo-init` exits or the app reports database unavailable
+
+**Cause:** MongoDB has not finished starting, the replica set was not initialized, or an old Docker volume contains an invalid local state.
+
+**Resolution:**
+
+```bash
+docker compose ps -a
+docker compose logs mongo mongo-init
+docker compose down -v
+docker compose up --build -d
+curl -fsS http://localhost:3000/api/health/db
+```
+
+The `-v` flag deletes local database data; do not use it for shared or valuable environments.
+
+### Git workflow standard
+
+The repository does not currently enforce a branch or commit policy in CI. The following convention is recommended for pull requests:
+
+- Branches: `feature/<short-description>`, `fix/<short-description>`, `docs/<short-description>`, `chore/<short-description>`.
+- Examples: `feature/customer-ticket-export`, `fix/mongo-health-check`, `docs/api-contract`.
+- Commits: Conventional Commits format: `<type>: <imperative summary>`.
+- Allowed common types: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `build`, `ci`.
+- Examples: `feat: add customer ticket notifications`, `fix: handle replica set startup`, `docs: add registration contract`.
+- Pull requests should include scope, validation commands, configuration changes, migration impact, and rollback notes.
+
+---
+
+## 5. SRE / Operational Runbook
+
+### Service profile
+
+- **Service:** Support Ops Desk web application and API
+- **Primary dependency:** MongoDB 7 replica set
+- **Health endpoint:** `GET /api/health/db`
+- **Readiness success:** HTTP `200`, JSON `status: "ok"`, and `database.connected: true`
+- **Degraded database response:** HTTP `503`, JSON `status: "degraded"`
+- **Default application port:** `3000`
+
+### Proposed SLOs
+
+These are proposed operational targets; the repository does not currently publish measured production SLOs.
+
+| Indicator            | Target                                                  | Measurement                                            |
+| -------------------- | ------------------------------------------------------- | ------------------------------------------------------ |
+| Availability         | `99.9%` monthly for the app and health endpoint         | Successful HTTP requests excluding planned maintenance |
+| API latency          | `p95 < 500 ms`, `p99 < 1 s` for non-upload API requests | Server request-duration histogram                      |
+| Health-check latency | `p95 < 250 ms`                                          | `/api/health/db` request duration                      |
+| Error rate           | `< 1%` 5xx responses over 5 minutes                     | Application HTTP metrics                               |
+| Recovery objective   | Restore service within `30 minutes`                     | Incident start to healthy endpoint                     |
+| Data recovery        | RPO `<= 15 minutes` in production                       | MongoDB backup policy; not provided by local Compose   |
+
+### Metrics and logs to monitor
+
+**Application**
+
+- HTTP request count by method, route, status, and role.
+- 4xx and 5xx rate, especially `5xx` by route.
+- Request latency p50/p95/p99.
+- Node.js process uptime, event-loop lag, CPU, RSS heap, and container restarts.
+- Rate-limit responses and authentication failures.
+- Upload payload rejection and request-body size errors.
+
+**MongoDB**
+
+- Connection state and pool utilization.
+- Query latency, operation count, and slow queries.
+- Transaction aborts, write conflicts, and buffering timeouts.
+- WiredTiger cache pressure, disk utilization, and replication/replica-set state.
+- Database health endpoint status and ping latency.
+
+**Platform**
+
+- Container CPU, memory, filesystem, and restart count.
+- Host disk capacity for `mongo_data`.
+- Network errors, load-balancer health, and TLS/reverse-proxy errors.
+- Backup success, restore test status, and secret rotation status.
+
+### High 5xx error rate playbook
+
+1. **Confirm the alert and scope.** Check whether the increase affects all routes or one route, whether it is limited to one role, and whether latency or container restarts increased at the same time.
+
+2. **Check service and database readiness.**
 
    ```bash
    docker compose ps
-   curl -fsS http://localhost:3000/api/health/db
+   curl -i http://localhost:3000/api/health/db
+   docker compose logs --tail=200 app mongo
    ```
 
-4. Place HTTPS and a reverse proxy or managed hosting layer in front of the Node server before public exposure.
-5. Set `CORS_ORIGIN` to the exact public origin and provide `MONGO_URI` through the deployment secret manager.
+   A `503` or `database.connected: false` points to MongoDB readiness, connectivity, or replica-set failure rather than an application route defect.
 
-### Image and runtime details
+3. **Check recent application errors.** Look for `MongoNetworkError`, buffering timeouts, transaction aborts, validation failures, uncaught exceptions, and repeated route-specific stack traces. Do not expose raw logs or credentials in incident channels.
 
-- Build stage: Node.js 24 Alpine, dependency install, Vite frontend build, and esbuild server bundle.
-- Runtime stage: Node.js 24 Alpine with production dependencies and `dist/server.cjs`.
-- Database: MongoDB 7 with a single-node replica set and persistent `mongo_data` volume.
-- Build-time frontend configuration: `VITE_GOOGLE_CLIENT_ID`.
-- Runtime configuration: `MONGO_URI`, `PORT`, `CORS_ORIGIN`, `GOOGLE_CLIENT_ID`, and `NODE_ENV`.
+4. **Check MongoDB state.**
 
-If this application is adopted by an enterprise team, add a protected CI workflow for install, lint, test, build, dependency scanning, image scanning, and deployment promotion. Keep credentials in the organization's secret manager rather than GitHub files.
+   ```bash
+   docker compose exec mongo mongosh --quiet --eval 'rs.status()'
+   docker compose exec mongo mongosh --quiet --eval 'db.adminCommand({ ping: 1 })'
+   ```
 
-## Ownership & Support
+   Confirm the replica set is initialized, the member is primary/healthy, disk is available, and connection limits are not exhausted.
 
-The repository does not currently define an engineering team, Slack/Teams channel, tech lead, or on-call rotation. Complete these values before internal operational handoff:
+5. **Check container resources and restarts.**
 
-- **Engineering Team:** `[Team or squad name]`
-- **Slack / Teams Channel:** `[#support-ops-channel]`
-- **Tech Lead / Primary Maintainer:** `[@maintainer]`
-- **Incident / Escalation Path:** `[Pager, ticket queue, or service owner]`
-- **Production URL:** `[Add after deployment]`
-- **Architecture decisions:** `[Link to internal ADR or wiki]`
+   ```bash
+   docker stats --no-stream
+   docker compose ps -a
+   ```
 
-For detailed role workflows, troubleshooting, rollback behavior, and screenshot evidence, see [SUPPORT_DESK_GUIDE.md](SUPPORT_DESK_GUIDE.md).
+   If the app is restarting or memory constrained, preserve logs, record the container state, and scale or restart according to the deployment platform procedure.
 
-## Security Notes
+6. **Reproduce with low-risk requests.** Test the health endpoint, Swagger page, and a protected route without credentials. Avoid mutation requests until database health and error scope are understood.
 
-- Never commit `.env`, OAuth client secrets, database credentials, or bearer tokens.
-- Set a strong `ADMIN_PASSWORD` before using shared data.
-- Use HTTPS and secure server-managed sessions or signed short-lived tokens before public production use; the current browser-stored user ID bearer-token model is for development.
-- Configure a restricted `CORS_ORIGIN` in shared environments.
-- Review `npm audit --omit=dev` before release. The current repository documentation records two moderate `qs` advisories inherited through Express 4.
-- Redact request and database details when replacing startup logs with structured production logging.
+7. **Mitigate.** Depending on evidence, remove a bad deployment, roll back to the last known-good image, restore database connectivity, or route traffic to a healthy instance. Do not run `docker compose down -v` in production; it deletes the local database volume.
+
+8. **Validate recovery.** Confirm 5xx rate returns below the SLO threshold, `/api/health/db` returns HTTP `200`, containers remain stable, and representative authenticated read/write workflows succeed.
+
+9. **Close out.** Record timeline, impact, root cause, mitigation, data integrity outcome, and follow-up actions. Add a regression test or monitoring rule for the failure mode.
+
+### Rollback guardrails
+
+- Preserve the current image, logs, and deployment metadata before rollback.
+- Confirm schema and migration compatibility before moving to an older application image.
+- Take or verify a database backup before destructive recovery operations.
+- Treat `docker compose down -v` as a local reset command only.
+- Rotate credentials if logs, tokens, or environment values were exposed.
