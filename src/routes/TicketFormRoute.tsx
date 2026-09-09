@@ -118,8 +118,10 @@ export function TicketFormRoute() {
         <h1 className="text-4xl sm:text-5xl font-serif text-ink tracking-tight font-medium">
           {isEdit ? 'Edit Ticket' : 'New Ticket'}
         </h1>
-        <p className="text-sm text-ink-muted">
-          {isEdit ? 'Update the details of the service request.' : 'Create a new service request for a customer.'}
+        <p className="text-sm text-ink-muted max-w-xl mx-auto">
+          {isEdit
+            ? 'Update the details of the service request.'
+            : 'Start with the customer and issue details. The triage fields below help the right person pick it up quickly.'}
         </p>
       </div>
 

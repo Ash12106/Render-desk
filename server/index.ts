@@ -218,7 +218,21 @@ export async function buildApp() {
     .map((origin) => origin.trim())
     .filter(Boolean);
   app.use(configuredCorsOrigins?.length ? cors({ origin: configuredCorsOrigins }) : cors());
-  app.use(helmet({ contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false }));
+  app.use(
+    helmet({
+      contentSecurityPolicy:
+        process.env.NODE_ENV === 'production'
+          ? {
+              directives: {
+                'script-src': ["'self'", 'https://accounts.google.com'],
+                'frame-src': ["'self'", 'https://accounts.google.com', 'https://accounts.googleusercontent.com'],
+                'connect-src': ["'self'", 'https://accounts.google.com'],
+                'img-src': ["'self'", 'data:', 'https:'],
+              },
+            }
+          : false,
+    }),
+  );
   app.use(express.json({ limit: '40mb' }));
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiDocument));
   app.use('/api/tickets', mutationLimiter);

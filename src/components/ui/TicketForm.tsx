@@ -103,6 +103,7 @@ export function TicketForm({
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
 
   // Merge client and server errors
   const errors = { ...clientErrors, ...serverErrors };
@@ -148,6 +149,12 @@ export function TicketForm({
   const handleAttachments = async (files: FileList | null) => {
     if (!files) return;
     const selected = Array.from(files).slice(0, 5);
+    const oversized = selected.find((file) => file.size > 5_000_000);
+    if (oversized) {
+      setAttachmentError(`${oversized.name} is larger than 5 MB.`);
+      return;
+    }
+    setAttachmentError(null);
     const attachments = await Promise.all(
       selected.map(async (file) => ({
         name: file.name,
@@ -384,6 +391,9 @@ export function TicketForm({
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           <div className="relative">
+            <label htmlFor="category" className="mb-1.5 block font-mono text-[10px] font-bold uppercase text-ink-muted">
+              Category
+            </label>
             <select
               id="category"
               value={formData.category || 'Technical'}
@@ -397,10 +407,13 @@ export function TicketForm({
               <option value="Account">Account access</option>
               <option value="Other">Something else</option>
             </select>
-            <ChevronDown className="absolute right-4 top-3 w-5 h-5 text-ink pointer-events-none" />
+            <ChevronDown className="absolute right-4 top-[2.1rem] w-5 h-5 text-ink pointer-events-none" />
           </div>
 
           <div className="relative">
+            <label htmlFor="priority" className="mb-1.5 block font-mono text-[10px] font-bold uppercase text-ink-muted">
+              Priority
+            </label>
             <select
               id="priority"
               value={formData.priority || 'Medium'}
@@ -418,7 +431,7 @@ export function TicketForm({
               <option value="High">High</option>
               <option value="Critical">Critical</option>
             </select>
-            <ChevronDown className="absolute right-4 top-3 w-5 h-5 text-ink pointer-events-none" />
+            <ChevronDown className="absolute right-4 top-[2.1rem] w-5 h-5 text-ink pointer-events-none" />
             {errors.priority && (
               <p id="priority-error" className="font-mono text-xs text-danger mt-2 ml-1">
                 {errors.priority}
@@ -427,6 +440,9 @@ export function TicketForm({
           </div>
 
           <div className="relative">
+            <label htmlFor="status" className="mb-1.5 block font-mono text-[10px] font-bold uppercase text-ink-muted">
+              Status
+            </label>
             <select
               id="status"
               value={formData.status || 'Open'}
@@ -444,7 +460,7 @@ export function TicketForm({
               <option value="Resolved">Resolved</option>
               <option value="Closed">Closed</option>
             </select>
-            <ChevronDown className="absolute right-4 top-3 w-5 h-5 text-ink pointer-events-none" />
+            <ChevronDown className="absolute right-4 top-[2.1rem] w-5 h-5 text-ink pointer-events-none" />
             {errors.status && (
               <p id="status-error" className="font-mono text-xs text-danger mt-2 ml-1">
                 {errors.status}
@@ -453,6 +469,12 @@ export function TicketForm({
           </div>
 
           <div className="relative">
+            <label
+              htmlFor="assignmentType"
+              className="mb-1.5 block font-mono text-[10px] font-bold uppercase text-ink-muted"
+            >
+              Request type
+            </label>
             <select
               id="assignmentType"
               value={formData.assignmentType || 'Incident'}
@@ -464,10 +486,13 @@ export function TicketForm({
               <option value="Request">Request</option>
               <option value="Change">Change</option>
             </select>
-            <ChevronDown className="absolute right-4 top-3 w-5 h-5 text-ink pointer-events-none" />
+            <ChevronDown className="absolute right-4 top-[2.1rem] w-5 h-5 text-ink pointer-events-none" />
           </div>
 
           <div className="relative">
+            <label htmlFor="contract" className="mb-1.5 block font-mono text-[10px] font-bold uppercase text-ink-muted">
+              Contract
+            </label>
             <select
               id="contract"
               value={formData.contract || ''}
@@ -479,10 +504,13 @@ export function TicketForm({
               <option value="Premium Support">Premium Support</option>
               <option value="Enterprise SLA">Enterprise SLA</option>
             </select>
-            <ChevronDown className="absolute right-4 top-3 w-5 h-5 text-ink pointer-events-none" />
+            <ChevronDown className="absolute right-4 top-[2.1rem] w-5 h-5 text-ink pointer-events-none" />
           </div>
 
           <div className="relative">
+            <label htmlFor="ticketForm" className="mb-1.5 block font-mono text-[10px] font-bold uppercase text-ink-muted">
+              Ticket form
+            </label>
             <select
               id="ticketForm"
               value={formData.ticketForm || ''}
@@ -494,10 +522,13 @@ export function TicketForm({
               <option value="Incident Report">Incident Report</option>
               <option value="Service Request">Service Request</option>
             </select>
-            <ChevronDown className="absolute right-4 top-3 w-5 h-5 text-ink pointer-events-none" />
+            <ChevronDown className="absolute right-4 top-[2.1rem] w-5 h-5 text-ink pointer-events-none" />
           </div>
 
           <div className="relative">
+            <label htmlFor="impact" className="mb-1.5 block font-mono text-[10px] font-bold uppercase text-ink-muted">
+              Impact
+            </label>
             <select
               id="impact"
               value={formData.impact || 'No Impact'}
@@ -508,10 +539,16 @@ export function TicketForm({
                 <option key={impact}>{impact}</option>
               ))}
             </select>
-            <ChevronDown className="absolute right-4 top-3 w-5 h-5 text-ink pointer-events-none" />
+            <ChevronDown className="absolute right-4 top-[2.1rem] w-5 h-5 text-ink pointer-events-none" />
           </div>
 
           <div className="relative">
+            <label
+              htmlFor="productFamily"
+              className="mb-1.5 block font-mono text-[10px] font-bold uppercase text-ink-muted"
+            >
+              Product family
+            </label>
             <input
               id="productFamily"
               value={formData.productFamily || ''}
@@ -521,21 +558,24 @@ export function TicketForm({
             />
           </div>
 
-          <div className="sm:col-span-2 md:col-span-3 border-2 border-dashed border-ink rounded-md p-4">
+          <div className="sm:col-span-2 md:col-span-3 border-2 border-dashed border-ink rounded-md p-4 bg-surface-muted/20">
             <label
               htmlFor="attachments"
-              className="flex items-center gap-2 font-mono text-xs font-bold uppercase cursor-pointer"
+              className="flex items-center gap-2 font-mono text-xs font-bold uppercase cursor-pointer hover:text-navy"
             >
-              <Paperclip className="w-4 h-4" /> Attach files
+              <Paperclip className="w-4 h-4" /> Add screenshots or files
             </label>
+            <p className="text-sm text-ink mt-2">Attach a PNG, photo, PDF, or log if it helps explain the issue.</p>
             <input
               id="attachments"
               type="file"
               multiple
+              accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,.doc,.docx"
               onChange={(e) => void handleAttachments(e.target.files)}
               className="sr-only"
             />
-            <p className="text-xs text-ink-muted mt-1">Up to 5 files, 5 MB each.</p>
+            <p className="text-xs text-ink-muted mt-1">Up to 5 files, 5 MB each. Avoid passwords and payment details.</p>
+            {attachmentError && <p className="font-mono text-xs text-danger mt-2">{attachmentError}</p>}
             {!!formData.attachments?.length && (
               <div className="flex flex-wrap gap-2 mt-3">
                 {formData.attachments.map((attachment) => (
@@ -563,6 +603,9 @@ export function TicketForm({
           </div>
 
           <div className="relative">
+            <label htmlFor="dueDate" className="mb-1.5 block font-mono text-[10px] font-bold uppercase text-ink-muted">
+              Follow-up date <span className="font-sans normal-case font-normal">(optional)</span>
+            </label>
             <input
               id="dueDate"
               type="date"

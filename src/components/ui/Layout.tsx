@@ -9,7 +9,7 @@ export function Layout() {
 
   const handleLogout = () => {
     localStorage.removeItem('auth_user');
-    navigate('/login');
+    navigate('/');
     window.location.reload();
   };
   const isAdmin = getStoredAuthUser()?.role === 'admin';

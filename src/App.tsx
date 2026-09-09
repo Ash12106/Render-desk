@@ -26,7 +26,7 @@ import { getStoredAuthUser } from './lib/auth';
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const authUser = getStoredAuthUser();
   if (!authUser) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
   if (authUser.role === 'customer') return <Navigate to="/customer" replace />;
   return <>{children}</>;
@@ -44,7 +44,7 @@ export default function App() {
     <ToastProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<Login />} />
           <Route path="/customer/login" element={<CustomerLogin />} />
           <Route
             path="/"
@@ -54,7 +54,6 @@ export default function App() {
               </PrivateRoute>
             }
           >
-            <Route index element={<Navigate to="/login" replace />} />
             <Route path="tickets" element={<TicketsDashboard />} />
             <Route path="tickets/new" element={<TicketFormRoute />} />
             <Route path="tickets/:id" element={<TicketDetail />} />

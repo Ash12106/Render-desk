@@ -25,7 +25,9 @@ export function CustomerTicketFormRoute() {
       <div className="text-center space-y-3 mb-12">
         <p className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-ink-muted">Customer support</p>
         <h1 className="text-4xl font-serif text-ink">Raise a new ticket</h1>
-        <p className="text-sm text-ink-muted">Tell us what happened and our team will follow up.</p>
+        <p className="text-sm text-ink-muted max-w-xl mx-auto">
+          Tell us what happened, when it started, and what you expected to happen. Screenshots are welcome.
+        </p>
       </div>
       <TicketForm
         customers={[customer]}

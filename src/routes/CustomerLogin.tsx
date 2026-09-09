@@ -118,7 +118,6 @@ export function CustomerLogin() {
           </div>
           {googleClientId ? (
             <GoogleLogin
-              width="100%"
               onSuccess={async ({ credential }) => {
                 if (!credential) return setError('Google did not return a valid credential.');
                 try {
@@ -150,7 +149,7 @@ export function CustomerLogin() {
         </div>
         <button
           type="button"
-          onClick={() => navigate('/login')}
+          onClick={() => navigate('/')}
           className="mt-6 w-full text-center text-xs font-mono font-bold uppercase underline"
         >
           Staff sign in

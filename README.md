@@ -4,8 +4,8 @@ Support Ops Desk is an internal service-ticket management application used by cu
 
 **Author:** Aashish A. Shirahatti, 3rd-year CSE-AIML student at VVCE, Mysore.
 
-**Live demo:** `[Add Render deployment URL here]`<br>
-**Demo health check:** `[Add Render deployment URL here]/api/health/db`
+**Live demo:** `https://render-desk.onrender.com`<br>
+**Demo health check:** `https://render-desk.onrender.com/api/health/db`
 
 ## 1. Enterprise README
 
@@ -22,7 +22,7 @@ Support Ops Desk is an internal service-ticket management application used by cu
 
 ```bash
 git clone https://github.com/Ash12106/Support-Desk-Final.git
-cd Internship-main
+cd Render-desk
 cp .env.example .env
 npm install
 npm run dev
@@ -38,7 +38,7 @@ curl -fsS http://localhost:3000/api/health/db
 
 Expected local URLs:
 
-- Staff/admin login: `http://localhost:3000/login`
+- Staff/admin login: `http://localhost:3000/`
 - Customer login and registration: `http://localhost:3000/customer/login`
 - Database readiness: `http://localhost:3000/api/health/db`
 - Swagger UI: `http://localhost:3000/api-docs`
@@ -57,7 +57,7 @@ curl -fsS http://localhost:3000/api/health/db
 npm run seed
 ```
 
-Then open `http://localhost:3000/login` and use the admin account configured by
+Then open `http://localhost:3000/` and use the admin account configured by
 `ADMIN_PASSWORD` (default local value: `admin` / `admin@2026`). From the admin
 workspace, create a staff account and assign a generated ticket. Open
 `http://localhost:3000/customer/login` in a private window to register a
@@ -81,6 +81,12 @@ Copy `.env.example` to `.env`. Use placeholders or a secret manager for shared e
 | `GOOGLE_CLIENT_ID`      | Backend Google ID-token audience                  | Empty                                   | No                           |
 | `VITE_GOOGLE_CLIENT_ID` | Frontend Google OAuth client ID; build-time value | Empty                                   | No                           |
 | `NODE_ENV`              | Runtime mode                                      | `development` or `production`           | No                           |
+
+For local Google sign-in, use the same Google OAuth client ID for `GOOGLE_CLIENT_ID` and
+`VITE_GOOGLE_CLIENT_ID`. In Google Cloud Console, add `http://localhost:3000` under
+**Authorized JavaScript origins** for that client. Staff and admin accounts must already
+exist with the same Google account email; customer Google sign-in can create or link a
+customer account automatically.
 
 ### Architecture overview
 
@@ -173,30 +179,31 @@ curl -fsS http://localhost:3000/api/health/db
 
 The Docker image builds the frontend and bundled server with Node.js 24 Alpine. The runtime serves `dist/server.cjs` on port `3000`. MongoDB 7 runs as a single-node replica set with the persistent `mongo_data` volume. Before public exposure, add HTTPS, a reverse proxy or managed platform, restricted `CORS_ORIGIN`, and deployment-secret injection.
 
-### Render deployment placeholder
+### Render deployment
 
-Complete these values after deploying the Docker service to Render with a
-reachable MongoDB Atlas or managed MongoDB database:
-
-- **Render application URL:** `[Paste Render URL here]`
-- **Health endpoint:** `[Paste Render URL here]/api/health/db`
-- **Swagger URL:** `[Paste Render URL here]/api-docs`
-- **Render service name:** `[Add service name]`
+- **Render application URL:** `https://render-desk.onrender.com`
+- **Health endpoint:** `https://render-desk.onrender.com/api/health/db`
+- **Swagger URL:** `https://render-desk.onrender.com/api-docs`
+- **Render service name:** `support-ops-desk`
 
 Required Render variables are `MONGO_URI`, `PORT`, `CORS_ORIGIN`,
-`ADMIN_PASSWORD`, `GOOGLE_CLIENT_ID`, and `NODE_ENV=production`. Keep database
-credentials and OAuth values in Render's environment settings, not in this file.
+`ADMIN_PASSWORD`, `GOOGLE_CLIENT_ID`, `VITE_GOOGLE_CLIENT_ID`, and
+`NODE_ENV=production`. Use `https://render-desk.onrender.com` as the production
+`CORS_ORIGIN`. Keep database credentials and OAuth values in Render's environment
+settings, not in this file.
+
+For Google sign-in, add both `http://localhost:3000` and
+`https://render-desk.onrender.com` under the OAuth client's **Authorized JavaScript
+origins** in Google Cloud Console. `GOOGLE_CLIENT_ID` and
+`VITE_GOOGLE_CLIENT_ID` must contain the same client ID. The production server
+allows Google Identity Services through its Content Security Policy.
 
 ### Final submission edit checklist
 
 Before sharing this README with the interviewer, update only these marked values:
 
-1. Replace `[Add Render deployment URL here]` near the top with the live Render URL.
-2. Replace `[Paste Render URL here]` in the Render deployment section with the same URL.
-3. Replace `[Add service name]` with the Render service name.
-4. Replace `[team or squad]`, `[#support-ops-channel]`, `[@maintainer]`, and `[pager, ticket queue, or service owner]` in Ownership and support.
-5. Replace `[deployment URL]` with the final public application address.
-6. Do not replace placeholder passwords with real secrets; keep credentials in Render environment settings.
+1. Replace `[team or squad]`, `[#support-ops-channel]`, `[@maintainer]`, and `[pager, ticket queue, or service owner]` in Ownership and support.
+2. Do not replace placeholder passwords with real secrets; keep credentials in Render environment settings.
 
 ### Ownership and support
 
@@ -206,7 +213,7 @@ The repository does not currently define formal ownership or an on-call rotation
 - **Support channel:** `[#support-ops-channel]`
 - **Primary maintainer:** `[@maintainer]`
 - **Incident escalation:** `[pager, ticket queue, or service owner]`
-- **Production URL:** `[deployment URL]`
+- **Production URL:** `https://render-desk.onrender.com`
 
 ---
 
