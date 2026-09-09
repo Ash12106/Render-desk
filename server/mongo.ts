@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
+const adminPassword = process.env.ADMIN_PASSWORD || 'admin@2026';
+
 export async function connectMongoDB() {
   mongoose.set('bufferCommands', false);
   const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost/mock';
@@ -232,7 +234,7 @@ async function runMigrations() {
       up: async () => {
         const adminExists = await User.findOne({ username: 'admin' });
         if (!adminExists) {
-          const passwordHash = await bcrypt.hash('password123', 10);
+          const passwordHash = await bcrypt.hash(adminPassword, 12);
           await User.create({
             username: 'admin',
             passwordHash,
@@ -241,7 +243,7 @@ async function runMigrations() {
             team: 'Operations',
             branch: 'Head Office',
           });
-          console.log('[Migrations] Created default admin user (admin / password123)');
+          console.log('[Migrations] Created default admin user.');
         }
       },
     },
@@ -288,6 +290,13 @@ async function runMigrations() {
           }
           await Ticket.deleteOne({ _id: ticket._id });
         }
+      },
+    },
+    {
+      name: '006_reset_admin_password',
+      up: async () => {
+        const passwordHash = await bcrypt.hash(adminPassword, 12);
+        await User.updateOne({ username: 'admin' }, { $set: { passwordHash, role: 'admin' } });
       },
     },
   ];

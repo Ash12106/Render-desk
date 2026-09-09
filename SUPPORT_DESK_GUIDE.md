@@ -18,6 +18,7 @@ Tickets and profiles are persisted in MongoDB. Browser storage only keeps the cu
 - npm
 - MongoDB 7 or newer, local or MongoDB Atlas
 - A browser such as Chrome, Edge, Safari, or Firefox
+- Docker Desktop with Compose v2, if using the container setup
 
 ## 3. First-time setup
 
@@ -34,6 +35,7 @@ Edit `.env`:
 MONGO_URI=mongodb://localhost:27017/support-ops
 PORT=3000
 CORS_ORIGIN=http://localhost:3000
+ADMIN_PASSWORD=admin@2026
 GOOGLE_CLIENT_ID=
 VITE_GOOGLE_CLIENT_ID=
 ```
@@ -46,6 +48,34 @@ Start the application:
 npm run dev
 ```
 
+### Docker setup
+
+Docker Compose runs the compiled application and MongoDB together. MongoDB is configured as a single-node replica set because the application uses transactions for account creation, ticket creation, deletion, and restore.
+
+```bash
+docker compose up --build -d
+```
+
+Open `http://localhost:3000/login`. To stop the containers while keeping MongoDB data:
+
+```bash
+docker compose down
+```
+
+To intentionally delete the Docker database volume and start from an empty database:
+
+```bash
+docker compose down -v
+```
+
+Docker reads `PORT`, `CORS_ORIGIN`, `GOOGLE_CLIENT_ID`, and `VITE_GOOGLE_CLIENT_ID` from `.env`. `VITE_GOOGLE_CLIENT_ID` is embedded during the image build, so rebuild after changing it:
+
+```bash
+VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com docker compose up --build -d
+```
+
+The image uses a Node 20 production runtime and installs only production dependencies in the final stage. `.dockerignore` excludes local dependencies, build output, Git metadata, logs, and environment secrets.
+
 Open:
 
 - Staff/admin: `http://localhost:3000/login`
@@ -57,10 +87,10 @@ The server runs migrations at startup. The first connected database receives a d
 
 ```text
 Username: admin
-Password: password123
+Password: admin@2026
 ```
 
-Change this credential before using a shared or production database.
+The password comes from `ADMIN_PASSWORD`. Change it before using a shared or production database. Existing databases receive the reset through startup migration `006_reset_admin_password`.
 
 ## 4. Using multiple devices
 

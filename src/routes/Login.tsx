@@ -57,7 +57,7 @@ export function Login() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full bg-surface border-2 border-ink rounded-md p-3 font-sans text-sm text-ink focus:outline-none focus:ring-2 focus:ring-navy"
-              placeholder="Enter username (admin)"
+              placeholder="Enter username"
             />
           </div>
           <div>
@@ -67,7 +67,7 @@ export function Login() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-surface border-2 border-ink rounded-md p-3 font-sans text-sm text-ink focus:outline-none focus:ring-2 focus:ring-navy"
-              placeholder="Enter password (password123)"
+              placeholder="Enter password"
             />
           </div>
           <button

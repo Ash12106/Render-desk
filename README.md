@@ -30,7 +30,7 @@ Support Ops Desk is a full-stack service ticket management system built with Rea
 - Node.js 20 or newer recommended.
 - npm.
 - MongoDB 7 or newer, either local or hosted such as MongoDB Atlas.
-- Docker is optional for running MongoDB or building a custom deployment image. This repository does not currently include a `Dockerfile` or `docker-compose.yml`; use the local/hosted MongoDB setup below unless you add those deployment files.
+- Docker Desktop with Compose v2 is optional. Docker Compose runs the production app with MongoDB and initializes the replica set required by transactional writes.
 
 ## Environment variables
 
@@ -40,6 +40,7 @@ Copy `.env.example` to `.env` and set the values for your environment:
 MONGO_URI=mongodb://localhost:27017/support-ops
 PORT=3000
 CORS_ORIGIN=http://localhost:3000
+ADMIN_PASSWORD=admin@2026
 GOOGLE_CLIENT_ID=
 VITE_GOOGLE_CLIENT_ID=
 ```
@@ -99,7 +100,7 @@ npm run seed
 
 The seed script creates up to 12 customers and 50 tickets. It skips ticket generation when at least 50 tickets already exist. It does not delete existing data.
 
-The default migration-created administrator is `admin`. The development password is printed by the migration output; change development credentials before using a shared or production database.
+The default migration-created administrator is `admin` with the password from `ADMIN_PASSWORD` (default: `admin@2026`). Change this value before using a shared or production database.
 
 ## Production build and run
 
@@ -116,6 +117,44 @@ npm start
 ```
 
 The production server serves the compiled frontend and API from the same process. Set `NODE_ENV=production`, `MONGO_URI`, `PORT`, and a restricted `CORS_ORIGIN` in the deployment environment.
+
+## Docker deployment
+
+Build and start the production app with MongoDB:
+
+```bash
+docker compose up --build -d
+```
+
+Open `http://localhost:3000/login`. The Compose stack includes:
+
+- `app`: the compiled Node.js/Express server and frontend.
+- `mongo`: MongoDB 7 with a single-node replica set for transactions.
+- `mongo-init`: one-shot replica-set initialization.
+- `mongo_data`: persistent MongoDB data volume.
+
+Stop the app without deleting database data:
+
+```bash
+docker compose down
+```
+
+Delete the containers and database volume only when intentionally resetting all data:
+
+```bash
+docker compose down -v
+```
+
+Configure Docker with an `.env` file before building. `VITE_GOOGLE_CLIENT_ID` is a build-time value; rebuild after changing it:
+
+```env
+PORT=3000
+CORS_ORIGIN=http://localhost:3000
+GOOGLE_CLIENT_ID=
+VITE_GOOGLE_CLIENT_ID=
+```
+
+For a different host port, use `PORT=3001 docker compose up --build -d` and open `http://localhost:3001`. For a public deployment, put HTTPS/reverse proxy in front of the app and set `CORS_ORIGIN` to the exact public origin.
 
 ## Validation commands
 
