@@ -2,6 +2,11 @@
 
 Support Ops Desk is an internal service-ticket management application used by customers, support staff, and administrators. It manages ticket intake, assignment, customer communication, lifecycle tracking, audit history, notifications, attachments, and recoverable deletion on a React, Express, and MongoDB stack.
 
+**Author:** Aashish A. Shirahatti, 3rd-year CSE-AIML student at VVCE, Mysore.
+
+**Live demo:** `[Add Render deployment URL here]`<br>
+**Demo health check:** `[Add Render deployment URL here]/api/health/db`
+
 ## 1. Enterprise README
 
 ### Prerequisites
@@ -37,6 +42,30 @@ Expected local URLs:
 - Customer login and registration: `http://localhost:3000/customer/login`
 - Database readiness: `http://localhost:3000/api/health/db`
 - Swagger UI: `http://localhost:3000/api-docs`
+
+### Interviewer quick test
+
+```bash
+# Start the complete local stack
+docker compose up --build -d
+
+# Confirm containers and database readiness
+docker compose ps
+curl -fsS http://localhost:3000/api/health/db
+
+# Generate sample customers, tickets, audit logs, and comments
+npm run seed
+```
+
+Then open `http://localhost:3000/login` and use the admin account configured by
+`ADMIN_PASSWORD` (default local value: `admin` / `admin@2026`). From the admin
+workspace, create a staff account and assign a generated ticket. Open
+`http://localhost:3000/customer/login` in a private window to register a
+customer, create a ticket, and test the shared activity flow.
+
+The seed command creates customer profiles and ticket data; it does not create
+customer login accounts. Customer accounts must be registered through the
+customer login screen or API.
 
 ### Environment variables
 
@@ -76,6 +105,42 @@ Core modules:
 - `server/*.test.ts` and `src/routes/TicketsDashboard.test.tsx`: API, notification, status, and dashboard tests.
 - `Dockerfile` and `docker-compose.yml`: production image and MongoDB replica-set deployment.
 
+### Application features by stakeholder
+
+| Stakeholder               | Main features                                                                                                                                                                              | Value delivered                                                                     |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| **Customer**              | Register and sign in, create support tickets, view ticket status, read notifications, exchange comments, manage profile, and use Google sign-in when configured.                           | A self-service support channel with transparent progress and conversation history.  |
+| **Support staff**         | View assigned work, search and filter tickets, update lifecycle and activity status, comment, inspect customer context, download attachments, and publish availability.                    | A focused workspace for resolving assigned requests and keeping customers informed. |
+| **Administrator**         | Create staff/admin accounts, manage roles, teams, branches and profile details, review workload metrics, assign tickets to available staff, bulk-assign work, and restore deleted tickets. | Operational control, workload balancing, and recoverability.                        |
+| **Application/API**       | Role-based authorization, Zod validation, rate limiting, Helmet security headers, transactional writes, audit logs, notifications, health checks, and Swagger documentation.               | Consistent, observable, and safer service behavior.                                 |
+| **Developer/Interviewer** | Docker Compose startup, database seed script, automated tests, formatting/lint checks, health endpoint, API documentation, and repeatable smoke-test commands.                             | Fast reproduction and easy technical evaluation.                                    |
+
+### End-to-end stakeholder flow
+
+```mermaid
+flowchart TD
+  Customer[Customer registers or signs in] --> Create[Creates support ticket]
+  Create --> Queue[Ticket enters staff/admin workspace]
+  Queue --> Admin[Administrator assigns available staff]
+  Admin --> Staff[Staff investigates and updates status]
+  Staff --> Comment[Staff and customer exchange activity comments]
+  Comment --> Resolve[Staff resolves or closes ticket]
+  Resolve --> Notify[Customer receives status notification]
+  Admin --> Restore[Administrator can restore archived tickets]
+  Create --> Audit[Audit log records ticket activity]
+  Staff --> Audit
+  Restore --> Audit
+```
+
+### Feature demonstration order
+
+1. Start Docker and run `npm run seed` to populate tickets, customers, comments, and audit records.
+2. Sign in as the default administrator and create a staff account.
+3. Assign a generated ticket to the staff member and update its lifecycle.
+4. Register a customer in a private browser window and create a customer ticket.
+5. Exchange comments between customer and staff and verify the activity log.
+6. Close a ticket, verify it becomes read-only, then test administrator deletion and restoration.
+
 ### Testing and quality checks
 
 Run these commands before a pull request:
@@ -107,6 +172,31 @@ curl -fsS http://localhost:3000/api/health/db
 ```
 
 The Docker image builds the frontend and bundled server with Node.js 24 Alpine. The runtime serves `dist/server.cjs` on port `3000`. MongoDB 7 runs as a single-node replica set with the persistent `mongo_data` volume. Before public exposure, add HTTPS, a reverse proxy or managed platform, restricted `CORS_ORIGIN`, and deployment-secret injection.
+
+### Render deployment placeholder
+
+Complete these values after deploying the Docker service to Render with a
+reachable MongoDB Atlas or managed MongoDB database:
+
+- **Render application URL:** `[Paste Render URL here]`
+- **Health endpoint:** `[Paste Render URL here]/api/health/db`
+- **Swagger URL:** `[Paste Render URL here]/api-docs`
+- **Render service name:** `[Add service name]`
+
+Required Render variables are `MONGO_URI`, `PORT`, `CORS_ORIGIN`,
+`ADMIN_PASSWORD`, `GOOGLE_CLIENT_ID`, and `NODE_ENV=production`. Keep database
+credentials and OAuth values in Render's environment settings, not in this file.
+
+### Final submission edit checklist
+
+Before sharing this README with the interviewer, update only these marked values:
+
+1. Replace `[Add Render deployment URL here]` near the top with the live Render URL.
+2. Replace `[Paste Render URL here]` in the Render deployment section with the same URL.
+3. Replace `[Add service name]` with the Render service name.
+4. Replace `[team or squad]`, `[#support-ops-channel]`, `[@maintainer]`, and `[pager, ticket queue, or service owner]` in Ownership and support.
+5. Replace `[deployment URL]` with the final public application address.
+6. Do not replace placeholder passwords with real secrets; keep credentials in Render environment settings.
 
 ### Ownership and support
 
@@ -247,7 +337,10 @@ curl -X POST http://localhost:3000/api/customer-auth/register \
 
 ### Generate local mock data
 
-The seed command creates sample customers, tickets, comments, and audit logs. It creates up to 12 customers and 50 tickets and does not delete existing data.
+The seed command creates up to 12 customer profiles, up to 50 tickets, audit
+records for generated tickets, and comments for the first 10 generated tickets.
+It does not delete existing data, skips ticket generation when 50 tickets
+already exist, and does not create customer login accounts.
 
 ```bash
 npm run seed
@@ -304,6 +397,31 @@ The repository does not currently enforce a branch or commit policy in CI. The f
 - Allowed common types: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `build`, `ci`.
 - Examples: `feat: add customer ticket notifications`, `fix: handle replica set startup`, `docs: add registration contract`.
 - Pull requests should include scope, validation commands, configuration changes, migration impact, and rollback notes.
+
+### Handy test commands
+
+```bash
+# Public readiness and documentation
+curl -i http://localhost:3000/api/health/db
+open http://localhost:3000/api-docs
+
+# Expected authentication protection on a private route
+curl -i http://localhost:3000/api/tickets
+
+# Register a disposable customer account
+curl -X POST http://localhost:3000/api/customer-auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Demo Customer","email":"demo@example.com","username":"demo.customer","password":"demo-password-123"}'
+
+# Useful operational checks
+docker compose ps -a
+docker compose logs --tail=100 app mongo
+docker stats --no-stream
+```
+
+Expected results: the health endpoint returns `200`, the unauthenticated
+ticket request returns `401`, and customer registration returns `201` unless
+the sample username or email already exists.
 
 ---
 
