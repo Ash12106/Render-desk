@@ -27,7 +27,7 @@ Support Ops Desk is a full-stack service ticket management system built with Rea
 
 ## Prerequisites
 
-- Node.js 20 or newer recommended.
+- Node.js 22 or newer recommended. The Docker image uses Node.js 24.
 - npm.
 - MongoDB 7 or newer, either local or hosted such as MongoDB Atlas.
 - Docker Desktop with Compose v2 is optional. Docker Compose runs the production app with MongoDB and initializes the replica set required by transactional writes.
@@ -133,6 +133,16 @@ Open `http://localhost:3000/login`. The Compose stack includes:
 - `mongo-init`: one-shot replica-set initialization.
 - `mongo_data`: persistent MongoDB data volume.
 
+Verify the stack after startup:
+
+```bash
+docker compose ps
+curl http://localhost:3000/api/health/db
+```
+
+The `app` container should be running, MongoDB should report `healthy`, and the
+health endpoint should return HTTP `200` with a connected database response.
+
 Stop the app without deleting database data:
 
 ```bash
@@ -166,6 +176,15 @@ npm run format:check      # Prettier check
 npm run build             # Production compilation
 npm audit                 # Dependency advisory scan
 ```
+
+The production build completes successfully. Vite may print a warning when the
+main browser bundle exceeds 500 kB; this is a performance warning and does not
+prevent the app from starting. Optimize it later with route-level `import()`
+boundaries and Rollup chunk configuration if needed.
+
+The Docker release path has also been smoke-tested: the image builds, MongoDB
+initializes its single-node replica set, the app responds on port 3000, and
+repeated database-health requests complete successfully.
 
 ## API overview
 

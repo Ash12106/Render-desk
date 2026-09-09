@@ -14,7 +14,7 @@ Tickets and profiles are persisted in MongoDB. Browser storage only keeps the cu
 
 ## 2. Requirements
 
-- Node.js 20 or newer
+- Node.js 22 or newer (the Docker image uses Node.js 24)
 - npm
 - MongoDB 7 or newer, local or MongoDB Atlas
 - A browser such as Chrome, Edge, Safari, or Firefox
@@ -74,7 +74,7 @@ Docker reads `PORT`, `CORS_ORIGIN`, `GOOGLE_CLIENT_ID`, and `VITE_GOOGLE_CLIENT_
 VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com docker compose up --build -d
 ```
 
-The image uses a Node 20 production runtime and installs only production dependencies in the final stage. `.dockerignore` excludes local dependencies, build output, Git metadata, logs, and environment secrets.
+The image uses a Node 24 production runtime and installs only production dependencies in the final stage. `.dockerignore` excludes local dependencies, build output, Git metadata, logs, and environment secrets.
 
 Open:
 
@@ -82,6 +82,10 @@ Open:
 - Customer: `http://localhost:3000/customer/login`
 - Database health: `http://localhost:3000/api/health/db`
 - API documentation: `http://localhost:3000/api-docs`
+
+After startup, run `docker compose ps` and confirm that `app` is running and
+`mongo` is healthy. The database-health endpoint should return HTTP `200` with
+a connected database response.
 
 The server runs migrations at startup. The first connected database receives a default administrator account:
 
@@ -244,6 +248,23 @@ npm run format:check
 npm run build
 ```
 
+For the Docker release path, also run:
+
+```bash
+docker compose up --build -d
+docker compose ps
+curl http://localhost:3000/api/health/db
+```
+
+The final local smoke check should cover the staff login, customer login,
+Swagger page, database-health endpoint, and protected API responses without a
+bearer token. A repeated health-request loop is useful for catching startup
+instability, but it cannot guarantee behavior across every network or device.
+
+The current build completes successfully. Vite may report that the main
+JavaScript bundle is larger than 500 kB; that is a performance warning, not a
+failed build.
+
 Manual smoke test:
 
 1. Open `/login` and sign in as admin.
@@ -256,6 +277,31 @@ Manual smoke test:
 8. Close the ticket and confirm both reply forms are disabled.
 9. Delete the ticket and restore it as admin.
 10. Confirm the original ticket and conversation history are available after restore.
+
+### Screenshot placeholders
+
+Add screenshots below these headings before submitting the guide. Keep secrets,
+tokens, personal data, and private hostnames out of screenshots.
+
+#### Screenshot 1: Staff or administrator login
+
+_Add screenshot here._
+
+#### Screenshot 2: Administrator dashboard and assignment
+
+_Add screenshot here._
+
+#### Screenshot 3: Staff ticket workspace
+
+_Add screenshot here._
+
+#### Screenshot 4: Customer portal and ticket activity
+
+_Add screenshot here._
+
+#### Screenshot 5: Docker services and database health
+
+_Add screenshot here._
 
 ## 11. Troubleshooting
 
