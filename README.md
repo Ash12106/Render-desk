@@ -5,7 +5,7 @@ Support Ops Desk is an internal service-ticket management application used by cu
 **Author:** Aashish A. Shirahatti, 3rd-year CSE-AIML student at VVCE, Mysore.
 
 **Live demo:** `https://render-desk.onrender.com`<br>
-**Tried to add google Auth but has issues use these for testing:** `Username:admin,password:admin@2026`,`Staff:Aashish6782,password:Asdf0987`,`Customer:Uthi27,password:Asdf1234`<br>
+**Tried to add google Auth but has issues with my console use these for testing:** `Username:admin,password:admin@2026`,`Staff:Aashish6782,password:Asdf0987`,`Customer:Uthi27,password:Asdf1234`<br>
 **You can add new Staff from the admin login and then use the same credentionals to log on to staff Account**
 **You can add new Customers from create account option on signin page** 
 **Demo health check:** `https://render-desk.onrender.com/api/health/db`
@@ -24,7 +24,7 @@ Support Ops Desk is an internal service-ticket management application used by cu
 ### Local setup
 
 ```bash
-git clone https://github.com/Ash12106/Support-Desk-Final.git
+git clone https://github.com/Ash12106/Render-desk.git
 cd Render-desk
 cp .env.example .env
 npm install
@@ -46,7 +46,7 @@ Expected local URLs:
 - Database readiness: `http://localhost:3000/api/health/db`
 - Swagger UI: `http://localhost:3000/api-docs`
 
-### Interviewer quick test
+### quick test
 
 ```bash
 # Start the complete local stack
