@@ -5,10 +5,12 @@ Support Ops Desk is an internal service-ticket management application used by cu
 **Author:** Aashish A. Shirahatti, 3rd-year CSE-AIML student at VVCE, Mysore.
 
 **Live demo:** `https://render-desk.onrender.com`<br>
-**Tried to add google Auth but has issues use these fro testing ** `Username:admin,password:admin@2026`<br>
+**Tried to add google Auth but has issues use these for testing:** `Username:admin,password:admin@2026`,`Staff:Aashish6782,password:Asdf0987`,`Customer:Uthi27,password:Asdf1234`<br>
+**You can add new Staff from the admin login and then use the same credentionals to log on to staff Account**
+**You can add new Customers from create account option on signin page** 
 **Demo health check:** `https://render-desk.onrender.com/api/health/db`
 
-## 1. Enterprise README
+## 1.README
 
 ### Prerequisites
 
