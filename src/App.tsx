@@ -21,9 +21,10 @@ import { StaffProfile } from './routes/StaffProfile';
 import { CustomerProfile } from './routes/CustomerProfile';
 import { StaffDirectory } from './routes/StaffDirectory';
 import { StaffManagement } from './routes/StaffManagement';
+import { getStoredAuthUser } from './lib/auth';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
-  const authUser = JSON.parse(localStorage.getItem('auth_user') || 'null');
+  const authUser = getStoredAuthUser();
   if (!authUser) {
     return <Navigate to="/login" replace />;
   }
@@ -32,7 +33,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 }
 
 function CustomerRoute({ children }: { children: React.ReactNode }) {
-  const authUser = JSON.parse(localStorage.getItem('auth_user') || 'null');
+  const authUser = getStoredAuthUser();
   if (!authUser) return <Navigate to="/customer/login" replace />;
   if (authUser.role !== 'customer') return <Navigate to="/tickets" replace />;
   return <>{children}</>;
@@ -53,7 +54,7 @@ export default function App() {
               </PrivateRoute>
             }
           >
-            <Route index element={<Navigate to="/tickets" replace />} />
+            <Route index element={<Navigate to="/login" replace />} />
             <Route path="tickets" element={<TicketsDashboard />} />
             <Route path="tickets/new" element={<TicketFormRoute />} />
             <Route path="tickets/:id" element={<TicketDetail />} />

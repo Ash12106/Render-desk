@@ -2,6 +2,7 @@ import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Plus, LogOut, UserRound } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
+import { getStoredAuthUser } from '@/src/lib/auth';
 
 export function Layout() {
   const navigate = useNavigate();
@@ -11,7 +12,7 @@ export function Layout() {
     navigate('/login');
     window.location.reload();
   };
-  const isAdmin = JSON.parse(localStorage.getItem('auth_user') || 'null')?.role === 'admin';
+  const isAdmin = getStoredAuthUser()?.role === 'admin';
 
   return (
     <div className="min-h-screen flex flex-col bg-canvas">

@@ -13,6 +13,8 @@ Support Ops Desk is a full-stack service ticket management system built with Rea
 - **URL-driven dashboard state**: search, filters, pagination, sorting, and table/Kanban view are synchronized with URL query parameters for shareable and restorable views.
 - **Optimistic UI**: comments, lifecycle changes, activity status, and staff availability update immediately and roll back on failure.
 - **Database health**: `/api/health/db` performs a MongoDB ping and reports connection state.
+- **Recoverable deletion**: deleted tickets move to the `deleted_tickets` collection instead of remaining in the active `tickets` collection; administrators can list and restore them.
+- **Multi-device access**: the server listens on all interfaces, so admin, staff, and customer devices can use the same host URL and shared MongoDB data.
 - **API documentation**: Swagger UI is available at `/api-docs` while the server is running.
 
 ## Architecture
@@ -76,6 +78,17 @@ Google sign-in is optional. Set both Google client variables to the same web OAu
 
 5. Open the staff login at `http://localhost:3000/login` or the customer login at `http://localhost:3000/customer/login`.
 
+### Use from other devices on the same network
+
+The server listens on `0.0.0.0`, so other devices can connect to the computer running the app. Find that computer's local IP address, for example `192.168.1.25`, and open these URLs from each device:
+
+```text
+http://192.168.1.25:3000/login
+http://192.168.1.25:3000/customer/login
+```
+
+Keep the development server running on the host computer. All devices use the same MongoDB database, while each browser stores its own login session. Use separate accounts for the administrator, staff member, and customer. If macOS or another firewall blocks port `3000`, allow incoming connections or use a deployed HTTPS URL instead. For a LAN demo where Vite hot reload is unnecessary, start with `DISABLE_HMR=true npm run dev`.
+
 ## Seed data and migrations
 
 The server runs database migrations during startup. To add sample customers, tickets, comments, and audit logs:
@@ -124,6 +137,13 @@ All protected routes use `Authorization: Bearer <user-id>` in the current develo
 - `GET /api/health/db`: MongoDB readiness and ping status.
 - `GET /api-docs`: Swagger UI.
 
+### Deleted ticket archive
+
+Deleting a ticket moves the complete document to `deleted_tickets` with `deletedAt` and `deletedBy` metadata, then removes it from `tickets`. Comments and audit logs retain the original ticket ID, so restoring the ticket reconnects its history.
+
+- `GET /api/admin/deleted-tickets`: list archived tickets (administrator only).
+- `POST /api/admin/deleted-tickets/:id/restore`: restore an archived ticket to `tickets` (administrator only).
+
 ### Authentication
 
 - `POST /api/auth/login`: staff/admin login.
@@ -147,7 +167,7 @@ All protected routes use `Authorization: Bearer <user-id>` in the current develo
 - `POST /api/tickets`: create a staff/admin ticket.
 - `GET /api/tickets/:id`: ticket, comments, audit log, assignment, and attachments.
 - `PUT /api/tickets/:id`: update ticket fields; staff updates are limited to assigned tickets and admins cannot change lifecycle status.
-- `DELETE /api/tickets/:id`: soft-delete a ticket and write an audit entry.
+- `DELETE /api/tickets/:id`: move a ticket to the `deleted_tickets` archive and write an audit entry.
 - `PUT /api/tickets/bulk-status`: bulk lifecycle updates for staff.
 - `PATCH /api/tickets/:id/activity-status`: update activity status for admins or assigned staff.
 - `PATCH /api/admin/tickets/:id/assignment`: assign one ticket to an available staff member and group.
@@ -167,11 +187,14 @@ All protected routes use `Authorization: Bearer <user-id>` in the current develo
 - `DELETE /api/customer/notifications`: clear notifications.
 - `GET /api/customers`: staff/admin customer list.
 - `GET /api/customers/:id/tickets`: customer profile and ticket history.
+- `GET /api/customer/tickets/:id/comments`: list comments for the authenticated customer's ticket.
+- `POST /api/customer/tickets/:id/comments`: add a comment to the authenticated customer's open ticket.
 
 ## Production audit notes
 
-- Helmet, rate limiting, Zod validation, authentication middleware, soft deletion, and transactional writes are enabled.
+- Helmet, rate limiting, Zod validation, authentication middleware, archived deletion, and transactional writes are enabled.
 - CORS is configurable with `CORS_ORIGIN`; set it explicitly in production.
+- The current development authentication model stores the authenticated user ID in browser storage and sends it as a bearer token. Use HTTPS, strong credentials, and a production session/token system before exposing this application publicly.
 - `npm audit --omit=dev` currently reports two moderate `qs` advisories inherited through Express 4. Run `npm audit fix` in a branch, review the lockfile and regression tests, then deploy the resulting upgrade after verification.
 - `npm outdated` reports major-version candidates for Express, Vite, TypeScript, esbuild, and related packages. Upgrade those independently, not all at once, because they may require code and configuration changes.
 - Operational startup, migration, seed, notification, and error logs remain intentionally present. Replace them with a structured logger and redact request/database details before production deployment rather than deleting observability outright.

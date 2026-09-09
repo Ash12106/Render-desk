@@ -102,6 +102,13 @@ ticketSchema.set('toJSON', {
 
 export const Ticket = mongoose.model('Ticket', ticketSchema);
 
+const deletedTicketSchema = ticketSchema.clone();
+deletedTicketSchema.add({
+  deletedBy: { type: String, required: true },
+});
+
+export const DeletedTicket = mongoose.model('DeletedTicket', deletedTicketSchema);
+
 const commentSchema = new mongoose.Schema(
   {
     ticketId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ticket', required: true },
@@ -265,6 +272,21 @@ async function runMigrations() {
         for (const customer of customers) {
           customer.customerCode = `CUST-${customer._id.toString().slice(-6).toUpperCase()}`;
           await customer.save();
+        }
+      },
+    },
+    {
+      name: '005_archive_legacy_deleted_tickets',
+      up: async () => {
+        const legacyDeletedTickets = await Ticket.find({ deletedAt: { $ne: null } });
+        for (const ticket of legacyDeletedTickets) {
+          const archivedTicket = await DeletedTicket.findById(ticket._id);
+          if (!archivedTicket) {
+            const ticketData = ticket.toObject();
+            (ticketData as any).deletedBy = 'legacy-soft-delete';
+            await DeletedTicket.create(ticketData);
+          }
+          await Ticket.deleteOne({ _id: ticket._id });
         }
       },
     },

@@ -25,6 +25,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { AlertCircle, Clock, CheckSquare, Paperclip } from 'lucide-react';
 import { useToast } from '@/src/components/ui/Toast';
+import { getStoredAuthUser } from '@/src/lib/auth';
 
 const COLORS = ['#17202b', '#4a5568', '#a0aec0', '#e2e8f0'];
 const PRIORITY_COLORS = {
@@ -92,7 +93,7 @@ export function TicketsDashboard() {
     queryFn: api.getCustomers,
     refetchInterval: DASHBOARD_REFRESH_INTERVAL,
   });
-  const currentUser = JSON.parse(localStorage.getItem('auth_user') || 'null');
+  const currentUser = getStoredAuthUser();
   const staffProfileQuery = useQuery({
     queryKey: ['profile'],
     queryFn: api.getProfile,

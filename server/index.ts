@@ -11,6 +11,7 @@ import {
   User,
   AuditLog,
   Notification,
+  DeletedTicket,
 } from './mongo.js';
 import { z } from 'zod';
 import mongoose from 'mongoose';
@@ -217,7 +218,7 @@ export async function buildApp() {
     .map((origin) => origin.trim())
     .filter(Boolean);
   app.use(configuredCorsOrigins?.length ? cors({ origin: configuredCorsOrigins }) : cors());
-  app.use(helmet());
+  app.use(helmet({ contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false }));
   app.use(express.json({ limit: '40mb' }));
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiDocument));
   app.use('/api/tickets', mutationLimiter);
@@ -472,6 +473,53 @@ export async function buildApp() {
     }
   });
 
+  app.get('/api/admin/deleted-tickets', requireAdmin, async (_req, res) => {
+    try {
+      const deletedTickets = await DeletedTicket.find().sort({ deletedAt: -1 });
+      res.json(deletedTickets);
+    } catch (err) {
+      handleApiError(res, _req, err);
+    }
+  });
+
+  app.post('/api/admin/deleted-tickets/:id/restore', mutationLimiter, requireAdmin, async (req, res) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'Invalid ticket ID', data: null });
+      }
+
+      const restoredTicket = await withTransaction(async (session) => {
+        const archivedTicket = await DeletedTicket.findById(req.params.id).session(session);
+        if (!archivedTicket) return null;
+
+        const ticketData = archivedTicket.toObject();
+        delete (ticketData as any).deletedBy;
+        delete (ticketData as any).deletedAt;
+        delete (ticketData as any).__v;
+        const [ticket] = await Ticket.create([ticketData], { session });
+        await DeletedTicket.deleteOne({ _id: archivedTicket._id }, { session });
+        await AuditLog.create(
+          [
+            {
+              ticketId: ticket._id,
+              action: 'RESTORED',
+              details: 'Ticket restored from deleted ticket archive',
+              author: (req as any).user?.username || 'System',
+            },
+          ],
+          { session },
+        );
+        return ticket;
+      });
+
+      if (!restoredTicket)
+        return res.status(404).json({ success: false, message: 'Deleted ticket not found', data: null });
+      res.json(restoredTicket);
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
   app.post('/api/admin/users', mutationLimiter, requireAdmin, async (req, res) => {
     try {
       const data = z
@@ -646,6 +694,58 @@ export async function buildApp() {
         updatedAt: -1,
       });
       res.json(tickets);
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
+  app.get('/api/customer/tickets/:id/comments', requireRole('customer'), async (req, res) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'Invalid ticket ID', data: null });
+      }
+      const ticket = await Ticket.findOne({
+        _id: req.params.id,
+        customerId: (req as any).user.customerId,
+        deletedAt: null,
+      });
+      if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found', data: null });
+      const comments = await Comment.find({ ticketId: ticket._id }).sort({ createdAt: 1 });
+      res.json(comments);
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
+  app.post('/api/customer/tickets/:id/comments', mutationLimiter, requireRole('customer'), async (req, res) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'Invalid ticket ID', data: null });
+      }
+      const ticket = await Ticket.findOne({
+        _id: req.params.id,
+        customerId: (req as any).user.customerId,
+        deletedAt: null,
+      });
+      if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found', data: null });
+      if (ticket.status === 'Closed') {
+        return res
+          .status(409)
+          .json({ success: false, message: 'Closed tickets cannot receive new comments.', data: null });
+      }
+
+      const data = commentSchema.pick({ content: true }).parse(req.body);
+      const author = (req as any).user?.username || 'Customer';
+      const newComment = await withTransaction(async (session) => {
+        const [comment] = await Comment.create([{ ticketId: ticket._id, content: data.content, author }], { session });
+        await AuditLog.create(
+          [{ ticketId: ticket._id, action: 'COMMENT_ADDED', details: 'Customer added a comment', author }],
+          { session },
+        );
+        return comment;
+      });
+
+      res.status(201).json(newComment);
     } catch (err) {
       handleApiError(res, req, err);
     }
@@ -1138,16 +1238,17 @@ export async function buildApp() {
 
       const author = (req as any).user?.username || 'System';
       const ticket = await withTransaction(async (session) => {
-        const deletedTicket = await Ticket.findOneAndUpdate(
-          { _id: req.params.id, deletedAt: null },
-          { deletedAt: new Date() },
-          { returnDocument: 'after', session },
-        );
-        if (!deletedTicket) return null;
+        const activeTicket = await Ticket.findOne({ _id: req.params.id, deletedAt: null }).session(session);
+        if (!activeTicket) return null;
+        const archivedTicket = activeTicket.toObject();
+        archivedTicket.deletedAt = new Date();
+        (archivedTicket as any).deletedBy = author;
+        await DeletedTicket.create([archivedTicket], { session });
+        await Ticket.deleteOne({ _id: activeTicket._id }, { session });
         await AuditLog.create(
           [
             {
-              ticketId: deletedTicket._id,
+              ticketId: activeTicket._id,
               action: 'DELETED',
               details: 'Ticket deleted',
               author,
@@ -1155,7 +1256,7 @@ export async function buildApp() {
           ],
           { session },
         );
-        return deletedTicket;
+        return activeTicket;
       });
       if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found', data: null });
 
@@ -1226,6 +1327,11 @@ export async function buildApp() {
       }
       const ticket = await Ticket.findById(req.params.id);
       if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found', data: null });
+      if (ticket.status === 'Closed') {
+        return res
+          .status(409)
+          .json({ success: false, message: 'Closed tickets cannot receive new comments.', data: null });
+      }
 
       const data = commentSchema.parse(req.body);
 

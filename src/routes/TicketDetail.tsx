@@ -9,6 +9,7 @@ import { ArrowLeft, Trash2, Edit, AlertCircle, Clock } from 'lucide-react';
 import { useToast } from '@/src/components/ui/Toast';
 import { ConfirmModal } from '@/src/components/ui/ConfirmModal';
 import { useQueryClient } from '@tanstack/react-query';
+import { getStoredAuthUser } from '@/src/lib/auth';
 
 export function TicketDetail() {
   const { id } = useParams<{ id: string }>();
@@ -25,7 +26,7 @@ export function TicketDetail() {
   const [notifyUser, setNotifyUser] = useState(true);
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const currentUser = JSON.parse(localStorage.getItem('auth_user') || 'null');
+  const currentUser = getStoredAuthUser();
   const [activityStatusSaving, setActivityStatusSaving] = useState(false);
 
   useEffect(() => {
@@ -51,6 +52,27 @@ export function TicketDetail() {
     };
     load();
   }, [id]);
+
+  useEffect(() => {
+    if (!id || ticket?.status === 'Closed') return;
+
+    const refreshComments = async () => {
+      try {
+        const comments = await api.getComments(id);
+        setActivities((current) => {
+          const logs = current.filter((activity) => 'action' in activity);
+          return [...comments, ...logs].sort(
+            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+          );
+        });
+      } catch {
+        // Keep the current activity feed visible if a background refresh fails.
+      }
+    };
+
+    const interval = window.setInterval(refreshComments, 1500);
+    return () => window.clearInterval(interval);
+  }, [id, ticket?.status]);
 
   const handleDelete = async () => {
     if (!id) return;
@@ -79,8 +101,7 @@ export function TicketDetail() {
       await queryClient.invalidateQueries({ queryKey: ['tickets'] });
       await queryClient.invalidateQueries({ queryKey: ['ticket-stats'] });
 
-      const authUserStr = localStorage.getItem('auth_user');
-      const author = authUserStr ? JSON.parse(authUserStr).username : 'Current User';
+      const author = getStoredAuthUser()?.username || 'Current User';
       const newLog: AuditLog = {
         id: `temp-status-${Date.now()}`,
         ticketId: id,
@@ -104,10 +125,9 @@ export function TicketDetail() {
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!id || !newComment.trim()) return;
+    if (!id || !ticket || ticket.status === 'Closed' || !newComment.trim()) return;
 
-    const authUserStr = localStorage.getItem('auth_user');
-    const author = authUserStr ? JSON.parse(authUserStr).username : 'Current User';
+    const author = getStoredAuthUser()?.username || 'Current User';
 
     const tempId = `temp-${Date.now()}`;
     const optimisticComment: Comment = {
@@ -386,25 +406,31 @@ export function TicketDetail() {
                     <p className="text-sm font-sans text-ink-muted italic">No activity yet.</p>
                   )}
 
-                  <form onSubmit={handleAddComment} className="mt-6">
-                    <textarea
-                      value={newComment}
-                      onChange={(e) => setNewComment(e.target.value)}
-                      placeholder="Add a comment..."
-                      className="w-full bg-surface border-2 border-ink rounded-md p-3 font-sans text-sm text-ink placeholder:text-ink/40 focus:outline-none focus:ring-2 focus:ring-navy"
-                      rows={3}
-                      disabled={isSubmittingComment}
-                    />
-                    <div className="mt-2 flex justify-end">
-                      <button
-                        type="submit"
-                        disabled={!newComment.trim() || isSubmittingComment}
-                        className="px-4 py-2 bg-ink text-white text-xs font-mono font-bold uppercase tracking-wider rounded-md hover:bg-ink/90 disabled:opacity-50 transition-colors"
-                      >
-                        {isSubmittingComment ? 'Posting...' : 'Post Comment'}
-                      </button>
-                    </div>
-                  </form>
+                  {ticket.status === 'Closed' ? (
+                    <p className="mt-6 text-sm text-ink-muted border border-line rounded-md bg-canvas p-4">
+                      This ticket is closed. The conversation is read-only.
+                    </p>
+                  ) : (
+                    <form onSubmit={handleAddComment} className="mt-6">
+                      <textarea
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        placeholder="Add a comment..."
+                        className="w-full bg-surface border-2 border-ink rounded-md p-3 font-sans text-sm text-ink placeholder:text-ink/40 focus:outline-none focus:ring-2 focus:ring-navy"
+                        rows={3}
+                        disabled={isSubmittingComment}
+                      />
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          type="submit"
+                          disabled={!newComment.trim() || isSubmittingComment}
+                          className="px-4 py-2 bg-ink text-white text-xs font-mono font-bold uppercase tracking-wider rounded-md hover:bg-ink/90 disabled:opacity-50 transition-colors"
+                        >
+                          {isSubmittingComment ? 'Posting...' : 'Post Comment'}
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </div>
               </section>
             </div>

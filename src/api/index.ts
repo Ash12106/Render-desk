@@ -194,6 +194,12 @@ export const api = {
   updateCustomerProfile: (data: { name: string; email: string; phone?: string }) =>
     fetchJson<Customer>('/api/customer/profile', { method: 'PATCH', body: JSON.stringify(data) }),
   getCustomerTickets: () => fetchJson<Ticket[]>('/api/customer/tickets'),
+  getCustomerComments: (ticketId: string) => fetchJson<Comment[]>(`/api/customer/tickets/${ticketId}/comments`),
+  createCustomerComment: (ticketId: string, content: string) =>
+    fetchJson<Comment>(`/api/customer/tickets/${ticketId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    }),
   getCustomerNotifications: () => fetchJson<CustomerNotification[]>('/api/customer/notifications'),
   markCustomerNotificationRead: (id: string) =>
     fetchJson<CustomerNotification>(`/api/customer/notifications/${id}/read`, { method: 'PATCH' }),

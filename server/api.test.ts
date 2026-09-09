@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { buildApp } from './index.js';
 import mongoose from 'mongoose';
-import { User, Customer, Ticket, Comment } from './mongo.js';
+import { User, Customer, Ticket, Comment, DeletedTicket } from './mongo.js';
 import bcrypt from 'bcryptjs';
 
 describe('Support Desk API', () => {
@@ -55,6 +55,7 @@ describe('Support Desk API', () => {
       await Customer.findByIdAndDelete(testCustomer?._id);
       if (testTicket) {
         await Ticket.findByIdAndDelete(testTicket._id);
+        await DeletedTicket.findByIdAndDelete(testTicket._id);
         await Comment.deleteMany({ ticketId: testTicket._id });
       }
       await mongoose.disconnect();
@@ -389,7 +390,7 @@ describe('Support Desk API', () => {
         title: 'Updated Title',
         description: 'Updated Description',
         priority: 'Medium',
-        status: 'Closed',
+        status: 'Resolved',
         category: 'Sales',
         notifyUser: true,
       });
@@ -404,17 +405,65 @@ describe('Support Desk API', () => {
 
   it('rejects reopening a closed ticket', async () => {
     if (!app) return;
-    const res = await request(app).put(`/api/tickets/${testTicket.id}`).set('Authorization', `Bearer ${token}`).send({
+    const created = await request(app).post('/api/tickets').set('Authorization', `Bearer ${token}`).send({
       customerId: testCustomer._id.toString(),
-      title: 'Updated Title',
-      description: 'Updated Description',
+      title: 'Closed conversation test ticket',
+      description: 'Testing closed ticket restrictions',
+      priority: 'Medium',
+      status: 'Open',
+      category: 'Sales',
+    });
+    const closedTicketId = created.body.id;
+    await request(app).put(`/api/tickets/${closedTicketId}`).set('Authorization', `Bearer ${token}`).send({
+      customerId: testCustomer._id.toString(),
+      title: 'Closed conversation test ticket',
+      description: 'Testing closed ticket restrictions',
+      priority: 'Medium',
+      status: 'In Progress',
+      category: 'Sales',
+    });
+    await request(app).put(`/api/tickets/${closedTicketId}`).set('Authorization', `Bearer ${token}`).send({
+      customerId: testCustomer._id.toString(),
+      title: 'Closed conversation test ticket',
+      description: 'Testing closed ticket restrictions',
+      priority: 'Medium',
+      status: 'Resolved',
+      category: 'Sales',
+    });
+    await request(app).put(`/api/tickets/${closedTicketId}`).set('Authorization', `Bearer ${token}`).send({
+      customerId: testCustomer._id.toString(),
+      title: 'Closed conversation test ticket',
+      description: 'Testing closed ticket restrictions',
+      priority: 'Medium',
+      status: 'Closed',
+      category: 'Sales',
+    });
+
+    const res = await request(app).put(`/api/tickets/${closedTicketId}`).set('Authorization', `Bearer ${token}`).send({
+      customerId: testCustomer._id.toString(),
+      title: 'Closed conversation test ticket',
+      description: 'Testing closed ticket restrictions',
       priority: 'Medium',
       status: 'Open',
       category: 'Sales',
     });
     expect(res.status).toBe(409);
     expect(res.body.message).toBe('Invalid status transition from Closed to Open');
-  });
+
+    const staffComment = await request(app)
+      .post(`/api/tickets/${closedTicketId}/comments`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ content: 'This should be rejected.', author: 'Tester' });
+    expect(staffComment.status).toBe(409);
+
+    const customerComment = await request(app)
+      .post(`/api/customer/tickets/${closedTicketId}/comments`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ content: 'This should also be rejected.' });
+    expect(customerComment.status).toBe(409);
+
+    await request(app).delete(`/api/tickets/${closedTicketId}`).set('Authorization', `Bearer ${token}`);
+  }, 15_000);
 
   it('should add a comment to a ticket', async () => {
     if (!app) return;
@@ -430,14 +479,52 @@ describe('Support Desk API', () => {
     expect(res.body.content).toBe('This is a test comment');
   });
 
+  it('lets the ticket customer read and add conversation comments', async () => {
+    if (!app) return;
+    const customerComments = await request(app)
+      .get(`/api/customer/tickets/${testTicket.id}/comments`)
+      .set('Authorization', `Bearer ${customerToken}`);
+    expect(customerComments.status).toBe(200);
+
+    const reply = await request(app)
+      .post(`/api/customer/tickets/${testTicket.id}/comments`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ content: 'Here is an update from the customer.' });
+    expect(reply.status).toBe(201);
+    expect(reply.body.content).toBe('Here is an update from the customer.');
+    expect(reply.body.author).toBe(customerUser.username);
+
+    const staffComments = await request(app)
+      .get(`/api/tickets/${testTicket.id}/comments`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(staffComments.body.some((comment: any) => comment.id === reply.body.id)).toBe(true);
+  });
+
   it('should delete a ticket', async () => {
     if (!app) return;
     const res = await request(app).delete(`/api/tickets/${testTicket.id}`).set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(204);
 
+    const archived = await DeletedTicket.findById(testTicket.id);
+    expect(archived).not.toBeNull();
+    expect((archived as any)?.deletedBy).toBe('testuser');
+
     const check = await request(app).get(`/api/tickets/${testTicket.id}`).set('Authorization', `Bearer ${token}`);
 
     expect(check.status).toBe(404);
-  });
+
+    const restored = await request(app)
+      .post(`/api/admin/deleted-tickets/${testTicket.id}/restore`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(restored.status).toBe(200);
+    expect(restored.body.id).toBe(testTicket.id);
+
+    const restoredCheck = await request(app)
+      .get(`/api/tickets/${testTicket.id}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(restoredCheck.status).toBe(200);
+
+    await request(app).delete(`/api/tickets/${testTicket.id}`).set('Authorization', `Bearer ${token}`);
+  }, 15_000);
 });
