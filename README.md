@@ -122,7 +122,7 @@ Core modules:
 | **Support staff**         | View assigned work, search and filter tickets, update lifecycle and activity status, comment, inspect customer context, download attachments, and publish availability.                    | A focused workspace for resolving assigned requests and keeping customers informed. |
 | **Administrator**         | Create staff/admin accounts, manage roles, teams, branches and profile details, review workload metrics, assign tickets to available staff, bulk-assign work, and restore deleted tickets. | Operational control, workload balancing, and recoverability.                        |
 | **Application/API**       | Role-based authorization, Zod validation, rate limiting, Helmet security headers, transactional writes, audit logs, notifications, health checks, and Swagger documentation.               | Consistent, observable, and safer service behavior.                                 |
-| **Developer/Interviewer** | Docker Compose startup, database seed script, automated tests, formatting/lint checks, health endpoint, API documentation, and repeatable smoke-test commands.                             | Fast reproduction and easy technical evaluation.                                    |
+| **Developer** | Docker Compose startup, database seed script, automated tests, formatting/lint checks, health endpoint, API documentation, and repeatable smoke-test commands.                             | Fast reproduction .                                    |
 
 ### End-to-end stakeholder flow
 
