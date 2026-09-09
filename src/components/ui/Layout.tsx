@@ -11,6 +11,7 @@ export function Layout() {
     navigate('/login');
     window.location.reload();
   };
+  const isAdmin = JSON.parse(localStorage.getItem('auth_user') || 'null')?.role === 'admin';
 
   return (
     <div className="min-h-screen flex flex-col bg-canvas">
@@ -28,8 +29,34 @@ export function Layout() {
                   )
                 }
               >
-                Queue
+                Tickets dashboard
               </NavLink>
+              {isAdmin && (
+                <>
+                  <NavLink
+                    to="/staff"
+                    className={({ isActive }) =>
+                      cn(
+                        'px-3 py-1.5 rounded-full text-xs font-mono font-bold uppercase tracking-wider transition-colors border-2',
+                        isActive ? 'bg-ink text-white border-ink' : 'text-ink border-transparent hover:border-ink/30',
+                      )
+                    }
+                  >
+                    Staff
+                  </NavLink>
+                  <NavLink
+                    to="/staff-management"
+                    className={({ isActive }) =>
+                      cn(
+                        'px-3 py-1.5 rounded-full text-xs font-mono font-bold uppercase tracking-wider transition-colors border-2',
+                        isActive ? 'bg-ink text-white border-ink' : 'text-ink border-transparent hover:border-ink/30',
+                      )
+                    }
+                  >
+                    Manage staff
+                  </NavLink>
+                </>
+              )}
             </nav>
           </div>
           <div className="flex items-center space-x-4">

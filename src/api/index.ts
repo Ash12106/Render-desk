@@ -28,13 +28,17 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   if (!res.ok) {
     if (data && data.success === false) {
       const err = new Error(data.message) as any;
+      if (data.fields) err.code = 'VALIDATION_ERROR';
       if (data.fields) err.fields = data.fields;
       throw err;
     }
     if (data?.error) {
       throw data.error;
     }
-    throw new Error('An unexpected error occurred.');
+    if (res.status === 404 && url.includes('/api/profile/availability')) {
+      throw new Error('The running server is outdated. Restart the development server and try again.');
+    }
+    throw new Error(`Request failed (${res.status}). Please try again.`);
   }
 
   if (data && data.success === true && data.data !== undefined) {
@@ -95,6 +99,11 @@ export const api = {
       body: JSON.stringify(data),
     });
   },
+  updateActivityStatus: (id: string | number, activityStatus: Ticket['activityStatus']) =>
+    fetchJson<Ticket>(`/api/tickets/${id}/activity-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ activityStatus }),
+    }),
 
   updateBulkStatus: (ticketIds: string[], status: Ticket['status']) => {
     return fetchJson<{ success: boolean; updatedCount: number }>('/api/tickets/bulk-status', {
@@ -149,14 +158,24 @@ export const api = {
   loginStaffWithGoogle: (credential: string) =>
     fetchJson<User>('/api/auth/google', { method: 'POST', body: JSON.stringify({ credential, accountType: 'staff' }) }),
   getProfile: () => fetchJson<User>('/api/profile'),
-  updateProfile: (data: { displayName: string; email: string; phone?: string; team?: string; branch?: string }) =>
+  updateProfile: (data: { displayName: string; email: string; phone?: string }) =>
     fetchJson<User>('/api/profile', { method: 'PATCH', body: JSON.stringify(data) }),
+  updateAvailability: (isAvailable: boolean) =>
+    fetchJson<User>('/api/profile/availability', { method: 'PATCH', body: JSON.stringify({ isAvailable }) }),
   updateStaffDetails: (
     id: string,
     data: { displayName: string; email: string; phone?: string; team: string; branch: string },
   ) => fetchJson<User>(`/api/admin/users/${id}/details`, { method: 'PATCH', body: JSON.stringify(data) }),
-  assignTicket: (id: string, assignedTo: string | null) =>
-    fetchJson<Ticket>(`/api/admin/tickets/${id}/assignment`, { method: 'PATCH', body: JSON.stringify({ assignedTo }) }),
+  assignTicket: (id: string, assignment: { assignedTo: string | null; assignedGroup: string | null }) =>
+    fetchJson<Ticket>(`/api/admin/tickets/${id}/assignment`, {
+      method: 'PATCH',
+      body: JSON.stringify(assignment),
+    }),
+  assignTickets: (ticketIds: string[], assignedTo: string) =>
+    fetchJson<{ success: boolean; assignedCount: number; assignedGroup: string }>('/api/admin/tickets/assignment', {
+      method: 'PATCH',
+      body: JSON.stringify({ ticketIds, assignedTo }),
+    }),
   getAdminUsers: () => fetchJson<User[]>('/api/admin/users'),
   createStaffAccount: (data: {
     username: string;

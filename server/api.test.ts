@@ -70,6 +70,14 @@ describe('Support Desk API', () => {
     expect(res.body.id).toBe(token);
   });
 
+  it('reports database readiness', async () => {
+    if (!app) return;
+    const res = await request(app).get('/api/health/db');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ok');
+    expect(res.body.database.connected).toBe(true);
+  });
+
   it('returns account profile timestamps and protects admin role management', async () => {
     if (!app) return;
     const profile = await request(app).get('/api/profile').set('Authorization', `Bearer ${token}`);
@@ -82,6 +90,18 @@ describe('Support Desk API', () => {
       .set('Authorization', `Bearer ${customerToken}`)
       .send({ role: 'staff' });
     expect(customerRoleChange.status).toBe(403);
+
+    const staffSelfRoleChange = await request(app)
+      .patch(`/api/admin/users/${token}/role`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ role: 'admin' });
+    expect(staffSelfRoleChange.status).toBe(403);
+
+    const staffBranchChange = await request(app)
+      .patch('/api/profile')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ displayName: 'Test User', email: 'test@example.com', branch: 'Restricted Branch' });
+    expect(staffBranchChange.status).toBe(400);
 
     const customerUpdate = await request(app)
       .patch('/api/customer/profile')
@@ -107,11 +127,27 @@ describe('Support Desk API', () => {
         role: 'staff',
       });
     expect(created.status).toBe(201);
+    const branchUpdate = await request(app)
+      .patch(`/api/admin/users/${created.body.id}/details`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        displayName: 'Managed Staff',
+        email: `${username}@example.com`,
+        phone: '',
+        team: 'Technical Support',
+        branch: 'Mumbai',
+      });
+    expect(branchUpdate.status).toBe(200);
+    expect(branchUpdate.body.branch).toBe('Mumbai');
     const directory = await request(app).get('/api/admin/users').set('Authorization', `Bearer ${adminToken}`);
     expect(directory.status).toBe(200);
     expect(
       directory.body.some(
-        (user: any) => user.username === username && user.working !== undefined && user.solved !== undefined,
+        (user: any) =>
+          user.username === username &&
+          user.joiningDate !== undefined &&
+          user.working !== undefined &&
+          user.solved !== undefined,
       ),
     ).toBe(true);
     await User.deleteOne({ username });
@@ -121,6 +157,15 @@ describe('Support Desk API', () => {
     if (!app) return;
     const res = await request(app).get('/api/tickets');
     expect(res.status).toBe(401);
+  });
+
+  it('accepts multiple ticket sort criteria', async () => {
+    if (!app) return;
+    const res = await request(app)
+      .get('/api/tickets?limit=10&offset=0&sort=priority,date')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.tickets).toBeInstanceOf(Array);
   });
 
   it('should validate Google login credentials before attempting verification', async () => {
@@ -148,19 +193,43 @@ describe('Support Desk API', () => {
 
   it('should create a new ticket', async () => {
     if (!app) return;
-    const res = await request(app).post('/api/tickets').set('Authorization', `Bearer ${token}`).send({
-      customerId: testCustomer._id.toString(),
-      title: 'API Test Ticket',
-      description: 'Testing ticket creation via supertest',
-      priority: 'High',
-      status: 'Open',
-      category: 'Technical',
-    });
+    const res = await request(app)
+      .post('/api/tickets')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        customerId: testCustomer._id.toString(),
+        title: 'API Test Ticket',
+        description: 'Testing ticket creation via supertest',
+        priority: 'High',
+        status: 'Open',
+        category: 'Technical',
+        assignmentType: 'Incident',
+        impact: 'Major',
+        productFamily: 'Core Platform',
+        attachments: [{ name: 'error.txt', type: 'text/plain', size: 12, data: 'data:text/plain;base64,ZXJyb3I=' }],
+      });
 
     expect(res.status).toBe(201);
     expect(res.body.title).toBe('API Test Ticket');
     expect(res.body.category).toBe('Technical');
+    expect(res.body.impact).toBe('Major');
+    expect(res.body.attachments).toHaveLength(1);
     testTicket = res.body;
+  });
+
+  it('accepts Critical priority for new tickets', async () => {
+    if (!app) return;
+    const res = await request(app).post('/api/tickets').set('Authorization', `Bearer ${token}`).send({
+      customerId: testCustomer._id.toString(),
+      title: 'Critical priority test ticket',
+      description: 'Testing critical priority support',
+      priority: 'Critical',
+      status: 'Open',
+      category: 'Technical',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.priority).toBe('Critical');
+    await request(app).delete(`/api/tickets/${res.body.id}`).set('Authorization', `Bearer ${token}`);
   });
 
   it('should fetch tickets with pagination', async () => {
@@ -197,6 +266,70 @@ describe('Support Desk API', () => {
     expect(res.status).toBe(200);
     expect(res.body.title).toBe('Updated Title');
     expect(res.body.category).toBe('Sales');
+  });
+
+  it('lets admins assign a group and staff member but not change status', async () => {
+    if (!app || !adminToken) return;
+    const assignment = await request(app)
+      .patch(`/api/admin/tickets/${testTicket.id}/assignment`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ assignedTo: token, assignedGroup: 'Technical Support' });
+    expect(assignment.status).toBe(200);
+    expect(assignment.body.assignedGroup).toBe('Technical Support');
+
+    const adminStatusChange = await request(app)
+      .put(`/api/tickets/${testTicket.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        customerId: testCustomer._id.toString(),
+        title: 'Updated Title',
+        description: 'Updated Description',
+        priority: 'Medium',
+        status: 'Resolved',
+        category: 'Sales',
+      });
+    expect(adminStatusChange.status).toBe(403);
+  });
+
+  it('lets admins bulk assign selected tickets to one staff member', async () => {
+    if (!app || !adminToken) return;
+    const bulkAssignment = await request(app)
+      .patch('/api/admin/tickets/assignment')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ticketIds: [testTicket.id], assignedTo: token });
+    expect(bulkAssignment.status).toBe(200);
+    expect(bulkAssignment.body.assignedCount).toBe(1);
+  });
+
+  it('lets assigned staff update activity status', async () => {
+    if (!app) return;
+    const activityUpdate = await request(app)
+      .patch(`/api/tickets/${testTicket.id}/activity-status`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ activityStatus: 'Awaiting customer response' });
+    expect(activityUpdate.status).toBe(200);
+    expect(activityUpdate.body.activityStatus).toBe('Awaiting customer response');
+  });
+
+  it('lets staff toggle availability and blocks unavailable assignments', async () => {
+    if (!app || !adminToken) return;
+    const unavailable = await request(app)
+      .patch('/api/profile/availability')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ isAvailable: false });
+    expect(unavailable.status).toBe(200);
+    expect(unavailable.body.isAvailable).toBe(false);
+
+    const rejected = await request(app)
+      .patch(`/api/admin/tickets/${testTicket.id}/assignment`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ assignedTo: token, assignedGroup: 'Technical Support' });
+    expect(rejected.status).toBe(409);
+
+    await request(app)
+      .patch('/api/profile/availability')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ isAvailable: true });
   });
 
   it('scopes customer access and stores status notifications', async () => {

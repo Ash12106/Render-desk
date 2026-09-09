@@ -2,18 +2,28 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { connectMongoDB, Ticket, Customer, Comment, User, AuditLog, Notification } from './mongo.js';
+import {
+  connectMongoDB,
+  getMongoConnectionState,
+  Ticket,
+  Customer,
+  Comment,
+  User,
+  AuditLog,
+  Notification,
+} from './mongo.js';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import cors from 'cors';
+import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
 import { OAuth2Client } from 'google-auth-library';
 import { queueCustomerStatusNotification, simulateStatusChangeNotification } from './notifications.js';
 import { assertValidStatusTransition } from './status.js';
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
 const googleClient = new OAuth2Client(googleClientId);
 
@@ -21,14 +31,31 @@ const ticketSchema = z.object({
   customerId: z.string().min(1, 'Choose a customer.'),
   title: z.string().trim().min(1, 'Enter a ticket title.'),
   description: z.string().trim().min(1, 'Describe the reported issue.'),
-  priority: z.enum(['Low', 'Medium', 'High'], {
+  priority: z.enum(['Low', 'Medium', 'High', 'Critical'], {
     message: 'Choose a valid priority.',
   }),
   status: z.enum(['Open', 'In Progress', 'Resolved', 'Closed'], {
     message: 'Choose a valid status.',
   }),
+  activityStatus: z.enum(['Unread', 'Read', 'Awaiting customer response', 'Awaiting technician response']).optional(),
   dueDate: z.string().optional().nullable(),
   category: z.enum(['Technical', 'Sales', 'Billing', 'Account', 'Other']).default('Technical'),
+  assignmentType: z.enum(['Incident', 'Problem', 'Request', 'Change']).default('Incident'),
+  contract: z.string().trim().max(120).optional().default(''),
+  ticketForm: z.string().trim().max(120).optional().default(''),
+  impact: z.enum(['No Impact', 'Site Down', 'Server Issue', 'Minor', 'Major', 'Crisis']).default('No Impact'),
+  productFamily: z.string().trim().max(120).optional().default(''),
+  attachments: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(255),
+        type: z.string().max(120),
+        size: z.number().int().positive().max(5_000_000),
+        data: z.string().max(7_000_000),
+      }),
+    )
+    .max(5)
+    .default([]),
   notifyUser: z.boolean().optional().default(false),
 });
 
@@ -186,10 +213,26 @@ const authMiddleware = async (req: express.Request, res: express.Response, next:
 export async function buildApp() {
   const app = express();
 
-  app.use(cors());
-  app.use(express.json());
+  const configuredCorsOrigins = process.env.CORS_ORIGIN?.split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  app.use(configuredCorsOrigins?.length ? cors({ origin: configuredCorsOrigins }) : cors());
+  app.use(helmet());
+  app.use(express.json({ limit: '40mb' }));
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiDocument));
   app.use('/api/tickets', mutationLimiter);
+
+  app.get('/api/health/db', async (_req, res) => {
+    try {
+      if (mongoose.connection.readyState !== 1 || !mongoose.connection.db) {
+        return res.status(503).json({ status: 'degraded', database: getMongoConnectionState() });
+      }
+      await mongoose.connection.db.command({ ping: 1 });
+      res.json({ status: 'ok', database: getMongoConnectionState() });
+    } catch (_error) {
+      res.status(503).json({ status: 'degraded', database: getMongoConnectionState() });
+    }
+  });
 
   app.post('/api/customer-auth/register', mutationLimiter, async (req, res) => {
     try {
@@ -369,12 +412,29 @@ export async function buildApp() {
           displayName: z.string().trim().min(2),
           email: z.string().email(),
           phone: z.string().trim().max(30).optional(),
-          team: z.string().trim().min(1).optional(),
-          branch: z.string().trim().min(1).optional(),
         })
+        .strict()
         .parse(req.body);
       const user = await User.findByIdAndUpdate((req as any).user._id, data, { returnDocument: 'after' });
       if (!user) return res.status(404).json({ success: false, message: 'Profile not found.', data: null });
+      res.json(user);
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
+  app.patch('/api/profile/availability', mutationLimiter, async (req, res) => {
+    try {
+      if ((req as any).user?.role !== 'staff') {
+        return res.status(403).json({ success: false, message: 'Only staff can update availability.', data: null });
+      }
+      const { isAvailable } = z.object({ isAvailable: z.boolean() }).parse(req.body);
+      const user = await User.findOneAndUpdate(
+        { _id: (req as any).user._id, role: 'staff' },
+        { $set: { isAvailable } },
+        { returnDocument: 'after', runValidators: true },
+      );
+      if (!user) return res.status(404).json({ success: false, message: 'Staff profile not found.', data: null });
       res.json(user);
     } catch (err) {
       handleApiError(res, req, err);
@@ -392,6 +452,7 @@ export async function buildApp() {
           return {
             ...safeUser,
             id: _id.toString(),
+            joiningDate: user.createdAt,
             working: await Ticket.countDocuments({
               assignedTo: _id,
               status: { $in: ['Open', 'In Progress'] },
@@ -471,16 +532,78 @@ export async function buildApp() {
 
   app.patch('/api/admin/tickets/:id/assignment', mutationLimiter, requireAdmin, async (req, res) => {
     try {
-      const { assignedTo } = z.object({ assignedTo: z.string().nullable() }).parse(req.body);
+      const { assignedTo, assignedGroup } = z
+        .object({ assignedTo: z.string().nullable(), assignedGroup: z.string().trim().min(1).nullable() })
+        .parse(req.body);
       if (assignedTo && !mongoose.Types.ObjectId.isValid(assignedTo))
         return res.status(400).json({ success: false, message: 'Invalid staff account.', data: null });
+      if (assignedTo) {
+        const staff = await User.findOne({ _id: assignedTo, role: 'staff' });
+        if (!staff) return res.status(400).json({ success: false, message: 'Choose a staff account.', data: null });
+        if (!staff.isAvailable)
+          return res.status(409).json({ success: false, message: 'This staff member is unavailable.', data: null });
+      }
       const ticket = await Ticket.findOneAndUpdate(
         { _id: req.params.id, deletedAt: null },
-        { assignedTo },
+        { assignedTo, assignedGroup: assignedGroup || '' },
         { returnDocument: 'after' },
       ).populate('assignedTo', 'displayName username team branch');
       if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found.', data: null });
       res.json(ticket);
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
+  app.patch('/api/tickets/:id/activity-status', mutationLimiter, requireRole('staff'), async (req, res) => {
+    try {
+      const { activityStatus } = z
+        .object({
+          activityStatus: z.enum(['Unread', 'Read', 'Awaiting customer response', 'Awaiting technician response']),
+        })
+        .parse(req.body);
+      const filter: Record<string, unknown> = { _id: req.params.id, deletedAt: null };
+      if ((req as any).user?.role === 'staff') filter.assignedTo = (req as any).user._id;
+      const ticket = await Ticket.findOneAndUpdate(filter, { $set: { activityStatus } }, { returnDocument: 'after' })
+        .populate('customerId', 'name email')
+        .populate('assignedTo', 'displayName username team branch');
+      if (!ticket)
+        return res
+          .status(404)
+          .json({ success: false, message: 'Ticket not found or not assigned to you.', data: null });
+      await AuditLog.create({
+        ticketId: ticket._id,
+        action: 'ACTIVITY_STATUS_CHANGE',
+        details: `Activity status changed to ${activityStatus}`,
+        author: (req as any).user?.username || 'System',
+      });
+      res.json(ticket);
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
+  app.patch('/api/admin/tickets/assignment', mutationLimiter, requireAdmin, async (req, res) => {
+    try {
+      const { ticketIds, assignedTo } = z
+        .object({ ticketIds: z.array(z.string().min(1)).min(1), assignedTo: z.string().nullable() })
+        .parse(req.body);
+      const objectIds = ticketIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+      if (objectIds.length !== ticketIds.length) {
+        return res.status(400).json({ success: false, message: 'Invalid ticket ID.', data: null });
+      }
+      if (!assignedTo || !mongoose.Types.ObjectId.isValid(assignedTo)) {
+        return res.status(400).json({ success: false, message: 'Choose a staff member.', data: null });
+      }
+      const staff = await User.findOne({ _id: assignedTo, role: 'staff' });
+      if (!staff) return res.status(400).json({ success: false, message: 'Choose a staff member.', data: null });
+      if (!staff.isAvailable)
+        return res.status(409).json({ success: false, message: 'This staff member is unavailable.', data: null });
+      const result = await Ticket.updateMany(
+        { _id: { $in: objectIds }, deletedAt: null },
+        { $set: { assignedTo: staff._id, assignedGroup: staff.team || '' } },
+      );
+      res.json({ success: true, assignedCount: result.modifiedCount, assignedGroup: staff.team || '' });
     } catch (err) {
       handleApiError(res, req, err);
     }
@@ -592,6 +715,12 @@ export async function buildApp() {
               priority: data.priority,
               status: 'Open',
               category: data.category,
+              assignmentType: data.assignmentType,
+              contract: data.contract,
+              ticketForm: data.ticketForm,
+              impact: data.impact,
+              productFamily: data.productFamily,
+              attachments: data.attachments,
               dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
             },
           ],
@@ -615,13 +744,16 @@ export async function buildApp() {
   // GET /api/tickets/stats
   app.get('/api/tickets/stats', async (req, res) => {
     try {
-      const tickets = await Ticket.find({ deletedAt: null });
+      const statsFilter: Record<string, unknown> = { deletedAt: null };
+      if ((req as any).user?.role === 'staff') statsFilter.assignedTo = (req as any).user._id;
+      const tickets = await Ticket.find(statsFilter);
       const statusCounts: Record<string, number> = { Open: 0, 'In Progress': 0, Resolved: 0, Closed: 0 };
-      const priorityCounts: Record<string, number> = { Low: 0, Medium: 0, High: 0 };
+      const priorityCounts: Record<string, number> = { Low: 0, Medium: 0, High: 0, Critical: 0 };
       const resolutionTimes: Record<string, { totalMs: number; count: number }> = {
         Low: { totalMs: 0, count: 0 },
         Medium: { totalMs: 0, count: 0 },
         High: { totalMs: 0, count: 0 },
+        Critical: { totalMs: 0, count: 0 },
       };
 
       tickets.forEach((t) => {
@@ -661,6 +793,8 @@ export async function buildApp() {
     try {
       const { search, status, priority, customerId, limit, offset, sort } = req.query;
       const filter: any = { deletedAt: null }; // soft delete filter
+      const currentUser = (req as any).user;
+      if (currentUser?.role === 'staff') filter.assignedTo = currentUser._id;
 
       if (status) filter.status = status;
       if (priority) filter.priority = priority;
@@ -669,11 +803,14 @@ export async function buildApp() {
       const parsedLimit = Math.min(parseInt(limit as string) || 50, 100); // enforce max limit
       const parsedOffset = parseInt(offset as string) || 0;
 
-      let sortObj: any = { updatedAt: -1 };
-      if (sort === 'date') sortObj = { createdAt: -1 };
-      else if (sort === 'priority') {
-        sortObj = { priority: 1 };
-      }
+      const sortObj: Record<string, 1 | -1> = {};
+      const requestedSorts = typeof sort === 'string' ? sort.split(',') : [];
+      requestedSorts.forEach((sortField) => {
+        if (sortField === 'date') sortObj.createdAt = -1;
+        if (sortField === 'priority') sortObj.priority = 1;
+        if (sortField === 'status') sortObj.status = 1;
+      });
+      if (Object.keys(sortObj).length === 0) sortObj.updatedAt = -1;
 
       if (search) {
         const s = search as string;
@@ -714,7 +851,11 @@ export async function buildApp() {
         return res.status(400).json({ success: false, message: 'Invalid ticket ID', data: null });
       }
 
-      const ticket = await Ticket.findOne({ _id: req.params.id, deletedAt: null }).populate('customerId', 'name email');
+      const ticketFilter: Record<string, unknown> = { _id: req.params.id, deletedAt: null };
+      if ((req as any).user?.role === 'staff') ticketFilter.assignedTo = (req as any).user._id;
+      const ticket = await Ticket.findOne(ticketFilter)
+        .populate('customerId', 'name email')
+        .populate('assignedTo', 'displayName username team branch');
       if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found', data: null });
 
       const comments = await Comment.find({ ticketId: ticket._id }).sort({ createdAt: 1 });
@@ -727,6 +868,8 @@ export async function buildApp() {
           customerId: (ticket.customerId as any)?.id,
           customerName: (ticket.customerId as any)?.name,
           customerEmail: (ticket.customerId as any)?.email,
+          assignedTo: (ticket.assignedTo as any)?.id || (ticket.assignedTo as any)?._id,
+          assignedStaffName: (ticket.assignedTo as any)?.displayName || (ticket.assignedTo as any)?.username,
         },
         comments,
         logs,
@@ -761,7 +904,14 @@ export async function buildApp() {
               priority: data.priority,
               status: data.status,
               category: data.category,
+              assignmentType: data.assignmentType,
+              contract: data.contract,
+              ticketForm: data.ticketForm,
+              impact: data.impact,
+              productFamily: data.productFamily,
+              attachments: data.attachments,
               dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+              assignedTo: (req as any).user?.role === 'staff' ? (req as any).user._id : null,
             },
           ],
           { session },
@@ -799,6 +949,12 @@ export async function buildApp() {
         status: z.enum(['Open', 'In Progress', 'Resolved', 'Closed']),
       });
       const { ticketIds, status } = schema.parse(req.body);
+
+      if ((req as any).user?.role === 'admin') {
+        return res
+          .status(403)
+          .json({ success: false, message: 'Administrators manage assignments, not ticket status.', data: null });
+      }
 
       const objectIds = ticketIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
       if (objectIds.length === 0) {
@@ -880,8 +1036,15 @@ export async function buildApp() {
         return res.status(404).json({ success: false, message: 'Customer not found', data: null });
       }
 
-      const oldTicket = await Ticket.findOne({ _id: req.params.id, deletedAt: null });
+      const updateFilter: Record<string, unknown> = { _id: req.params.id, deletedAt: null };
+      if ((req as any).user?.role === 'staff') updateFilter.assignedTo = (req as any).user._id;
+      const oldTicket = await Ticket.findOne(updateFilter);
       if (!oldTicket) return res.status(404).json({ success: false, message: 'Ticket not found', data: null });
+      if ((req as any).user?.role === 'admin' && oldTicket.status !== data.status) {
+        return res
+          .status(403)
+          .json({ success: false, message: 'Administrators manage assignments, not ticket status.', data: null });
+      }
       try {
         assertValidStatusTransition(oldTicket.status, data.status);
       } catch (err) {
@@ -891,7 +1054,7 @@ export async function buildApp() {
       const author = (req as any).user?.username || 'System';
       const ticket = await withTransaction(async (session) => {
         const updatedTicket = await Ticket.findOneAndUpdate(
-          { _id: req.params.id, deletedAt: null },
+          updateFilter,
           {
             customerId: data.customerId,
             title: data.title,
@@ -899,6 +1062,12 @@ export async function buildApp() {
             priority: data.priority,
             status: data.status,
             category: data.category,
+            assignmentType: data.assignmentType,
+            contract: data.contract,
+            ticketForm: data.ticketForm,
+            impact: data.impact,
+            productFamily: data.productFamily,
+            attachments: data.attachments,
             dueDate: data.dueDate ? new Date(data.dueDate) : null,
           },
           { returnDocument: 'after', session },

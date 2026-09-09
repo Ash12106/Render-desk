@@ -36,6 +36,8 @@ export function StatusBadge({ status, className }: { status: Status; className?:
 export function PriorityBadge({ priority, className }: { priority: Priority; className?: string }) {
   const getPriorityIcon = () => {
     switch (priority) {
+      case 'Critical':
+        return <ArrowUp className="w-3 h-3 mr-1" strokeWidth={4} />;
       case 'High':
         return <ArrowUp className="w-3 h-3 mr-1" strokeWidth={3} />;
       case 'Medium':
@@ -49,8 +51,9 @@ export function PriorityBadge({ priority, className }: { priority: Priority; cla
     <span
       className={cn(
         'inline-flex items-center font-mono text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border-2',
-        priority === 'High' && 'bg-danger text-white border-danger',
-        priority === 'Medium' && 'bg-warning text-white border-warning',
+        priority === 'Critical' && 'bg-danger text-white border-danger',
+        priority === 'High' && 'bg-warning text-white border-warning',
+        priority === 'Medium' && 'bg-info text-white border-info',
         priority === 'Low' && 'bg-success text-white border-success',
         className,
       )}

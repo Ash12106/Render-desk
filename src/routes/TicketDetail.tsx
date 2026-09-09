@@ -8,10 +8,12 @@ import { motion } from 'motion/react';
 import { ArrowLeft, Trash2, Edit, AlertCircle, Clock } from 'lucide-react';
 import { useToast } from '@/src/components/ui/Toast';
 import { ConfirmModal } from '@/src/components/ui/ConfirmModal';
+import { useQueryClient } from '@tanstack/react-query';
 
 export function TicketDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { showToast } = useToast();
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [activities, setActivities] = useState<(Comment | AuditLog)[]>([]);
@@ -23,6 +25,8 @@ export function TicketDetail() {
   const [notifyUser, setNotifyUser] = useState(true);
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const currentUser = JSON.parse(localStorage.getItem('auth_user') || 'null');
+  const [activityStatusSaving, setActivityStatusSaving] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -32,7 +36,10 @@ export function TicketDetail() {
         const { ticket: fetchedTicket, comments: fetchedComments, logs: fetchedLogs } = await api.getTicket(id);
         setTicket(fetchedTicket);
 
-        const combined = [...fetchedComments, ...(fetchedLogs || [])].sort((a, b) => {
+        const combined = [
+          ...fetchedComments,
+          ...(fetchedLogs || []).filter((log) => log.action !== 'COMMENT_ADDED'),
+        ].sort((a, b) => {
           return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
         });
         setActivities(combined);
@@ -51,6 +58,8 @@ export function TicketDetail() {
       setIsDeleting(true);
       setDeleteError(null);
       await api.deleteTicket(id);
+      await queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      await queryClient.invalidateQueries({ queryKey: ['ticket-stats'] });
       showToast('Ticket deleted successfully');
       navigate('/tickets');
     } catch (err: any) {
@@ -67,6 +76,8 @@ export function TicketDetail() {
     try {
       const updated = await api.updateTicket(id, { ...ticket, status: newStatus, notifyUser });
       setTicket(updated);
+      await queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      await queryClient.invalidateQueries({ queryKey: ['ticket-stats'] });
 
       const authUserStr = localStorage.getItem('auth_user');
       const author = authUserStr ? JSON.parse(authUserStr).username : 'Current User';
@@ -116,19 +127,9 @@ export function TicketDetail() {
       setIsSubmittingComment(true);
       const comment = await api.createComment(id, { content: commentContent, author });
 
-      const newLog: AuditLog = {
-        id: `temp-log-${Date.now()}`,
-        ticketId: id,
-        action: 'COMMENT_ADDED',
-        details: 'Added a new comment',
-        author,
-        createdAt: comment.createdAt,
-        updatedAt: comment.createdAt,
-      };
-
       setActivities((prev) => {
         const withoutTemp = prev.filter((c) => c.id !== tempId);
-        return [...withoutTemp, comment, newLog].sort(
+        return [...withoutTemp, comment].sort(
           (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
         );
       });
@@ -139,6 +140,24 @@ export function TicketDetail() {
       showToast('Failed to add comment');
     } finally {
       setIsSubmittingComment(false);
+    }
+  };
+
+  const handleActivityStatusChange = async (activityStatus: NonNullable<Ticket['activityStatus']>) => {
+    if (!id || !ticket || activityStatus === ticket.activityStatus) return;
+    const previousTicket = ticket;
+    setTicket({ ...ticket, activityStatus });
+    setActivityStatusSaving(true);
+    try {
+      const updated = await api.updateActivityStatus(id, activityStatus);
+      setTicket(updated);
+      await queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      showToast(`Activity status updated to ${activityStatus}`);
+    } catch (error: any) {
+      setTicket(previousTicket);
+      showToast(error.message || 'Failed to update activity status', 'error');
+    } finally {
+      setActivityStatusSaving(false);
     }
   };
 
@@ -181,6 +200,12 @@ export function TicketDetail() {
               </span>
               <StatusBadge status={ticket.status} />
               <PriorityBadge priority={ticket.priority} />
+              {(ticket.assignedGroup || ticket.assignedStaffName) && (
+                <span className="font-mono text-xs font-bold uppercase border-2 border-ink rounded-md px-3 py-1">
+                  {ticket.assignedGroup || 'Assigned'}
+                  {ticket.assignedStaffName ? ` · ${ticket.assignedStaffName}` : ''}
+                </span>
+              )}
               {ticket.dueDate && ticket.status !== 'Resolved' && ticket.status !== 'Closed' && (
                 <div
                   className={`flex items-center gap-1.5 font-mono text-xs font-bold px-3 py-1 rounded-md border-2 ${
@@ -238,32 +263,79 @@ export function TicketDetail() {
                 </div>
               </section>
 
+              {ticket.attachments && ticket.attachments.length > 0 && (
+                <section>
+                  <h3 className="font-mono text-xs font-bold text-ink uppercase tracking-[0.2em] mb-4">Attachments</h3>
+                  <div className="flex flex-wrap gap-3">
+                    {ticket.attachments.map((attachment) => (
+                      <a
+                        key={`${attachment.name}-${attachment.size}`}
+                        href={attachment.data}
+                        download={attachment.name}
+                        className="inline-flex items-center gap-2 border-2 border-ink rounded-md bg-canvas px-3 py-2 text-xs font-mono font-bold hover:bg-ink hover:text-white transition-colors"
+                      >
+                        {attachment.name}
+                      </a>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              <section>
+                <h3 className="font-mono text-xs font-bold text-ink uppercase tracking-[0.2em] mb-4">
+                  Activity status
+                </h3>
+                <select
+                  aria-label="Activity status"
+                  value={ticket.activityStatus || 'Unread'}
+                  disabled={activityStatusSaving}
+                  onChange={(event) =>
+                    void handleActivityStatusChange(event.target.value as NonNullable<Ticket['activityStatus']>)
+                  }
+                  className="w-full max-w-md border-2 border-ink rounded-md bg-canvas px-4 py-3 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-navy/30"
+                >
+                  <option>Unread</option>
+                  <option>Read</option>
+                  <option>Awaiting customer response</option>
+                  <option>Awaiting technician response</option>
+                </select>
+                <p className="mt-2 text-xs text-ink-muted">
+                  Use this for handoffs and response tracking; lifecycle status remains separate.
+                </p>
+              </section>
+
               <section>
                 <h3 className="font-mono text-xs font-bold text-ink uppercase tracking-[0.2em] mb-4">
                   Status Lifecycle
                 </h3>
-                <label className="mb-4 flex items-center justify-between gap-4 rounded-md border-2 border-ink bg-canvas p-3 font-mono text-xs font-bold uppercase tracking-wider text-ink">
-                  <span>Notify customer on status change</span>
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    aria-checked={notifyUser}
-                    aria-label="Notify customer on status change"
-                    checked={notifyUser}
-                    onChange={(event) => setNotifyUser(event.target.checked)}
-                    className="h-5 w-5 cursor-pointer accent-navy"
-                  />
-                </label>
+                {currentUser?.role === 'admin' ? (
+                  <p className="mb-4 rounded-md border-2 border-warning bg-warning-bg p-3 font-mono text-xs font-bold uppercase tracking-wider text-warning">
+                    Administrators manage assignments. Staff handle ticket progress and resolution.
+                  </p>
+                ) : (
+                  <label className="mb-4 flex items-center justify-between gap-4 rounded-md border-2 border-ink bg-canvas p-3 font-mono text-xs font-bold uppercase tracking-wider text-ink">
+                    <span>Notify customer on status change</span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      aria-checked={notifyUser}
+                      aria-label="Notify customer on status change"
+                      checked={notifyUser}
+                      onChange={(event) => setNotifyUser(event.target.checked)}
+                      className="h-5 w-5 cursor-pointer accent-navy"
+                    />
+                  </label>
+                )}
                 <div className="flex flex-wrap items-center gap-2">
                   {statusFlow.map((s, i) => (
                     <React.Fragment key={s}>
                       <button
-                        disabled={ticket.status === 'Closed' && s !== 'Closed'}
+                        disabled={currentUser?.role === 'admin' || (ticket.status === 'Closed' && s !== 'Closed')}
                         onClick={() => handleStatusChange(s)}
                         className={`px-4 py-2 text-xs font-mono font-bold uppercase tracking-wider rounded-full border-2 transition-colors ${
                           ticket.status === s
                             ? 'bg-ink text-white border-ink'
-                            : ticket.status === 'Closed'
+                            : currentUser?.role === 'admin' || ticket.status === 'Closed'
                               ? 'bg-surface text-ink-muted border-line opacity-50 cursor-not-allowed'
                               : 'bg-surface text-ink border-ink hover:bg-line/20'
                         }`}
@@ -337,7 +409,7 @@ export function TicketDetail() {
               </section>
             </div>
 
-            <aside className="w-full lg:w-72 shrink-0 space-y-8">
+            <aside className="w-full lg:w-72 min-w-0 shrink-0 space-y-8">
               <div className="bg-canvas p-6 rounded-md border-2 border-ink">
                 <h3 className="font-mono text-xs font-bold text-ink uppercase tracking-[0.2em] mb-4">
                   Customer Details
@@ -349,7 +421,7 @@ export function TicketDetail() {
                   </div>
                   <div>
                     <p className="font-mono text-[10px] text-ink-muted uppercase tracking-wider mb-1">Email</p>
-                    <p className="font-bold">{ticket.customerEmail || 'N/A'}</p>
+                    <p className="font-bold break-all">{ticket.customerEmail || 'N/A'}</p>
                   </div>
                   <Link
                     to={`/customers/${ticket.customerId}`}

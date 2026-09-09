@@ -74,7 +74,7 @@ export function CustomerDetail() {
             <span className="font-mono text-[10px] font-bold text-ink-muted uppercase tracking-wider block mb-1">
               Email address
             </span>
-            {customer.email || 'N/A'}
+            <span className="break-all">{customer.email || 'N/A'}</span>
           </div>
           <div>
             <span className="font-mono text-[10px] font-bold text-ink-muted uppercase tracking-wider block mb-1">

@@ -19,6 +19,8 @@ import { CustomerTicketFormRoute } from './routes/CustomerTicketFormRoute';
 import { CustomerTicketDetail } from './routes/CustomerTicketDetail';
 import { StaffProfile } from './routes/StaffProfile';
 import { CustomerProfile } from './routes/CustomerProfile';
+import { StaffDirectory } from './routes/StaffDirectory';
+import { StaffManagement } from './routes/StaffManagement';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const authUser = JSON.parse(localStorage.getItem('auth_user') || 'null');
@@ -58,6 +60,8 @@ export default function App() {
             <Route path="tickets/:id/edit" element={<TicketFormRoute />} />
             <Route path="customers/:id" element={<CustomerDetail />} />
             <Route path="profile" element={<StaffProfile />} />
+            <Route path="staff" element={<StaffDirectory />} />
+            <Route path="staff-management" element={<StaffManagement />} />
             <Route
               path="*"
               element={

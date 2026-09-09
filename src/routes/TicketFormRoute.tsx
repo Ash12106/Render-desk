@@ -43,6 +43,14 @@ export function TicketFormRoute() {
             description: tkt.description,
             priority: tkt.priority,
             status: tkt.status,
+            category: tkt.category,
+            assignmentType: tkt.assignmentType,
+            contract: tkt.contract,
+            ticketForm: tkt.ticketForm,
+            impact: tkt.impact,
+            productFamily: tkt.productFamily,
+            attachments: tkt.attachments || [],
+            dueDate: tkt.dueDate,
           });
         }
       } catch (err: any) {
@@ -71,8 +79,7 @@ export function TicketFormRoute() {
     } catch (err: any) {
       if (err.code === 'VALIDATION_ERROR' && err.fields) {
         setFieldErrors(err.fields);
-        // Throw an error to let TicketForm know submission failed
-        throw new Error('Validation failed', { cause: err });
+        throw new Error('Please correct the highlighted fields.', { cause: err });
       } else {
         setGlobalError(err.message || 'An unexpected error occurred');
         throw err;

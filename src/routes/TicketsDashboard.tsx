@@ -1,30 +1,48 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, ChevronLeft, ChevronRight, ArrowUpDown, Download, Columns3, GripVertical } from 'lucide-react';
+import {
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpDown,
+  Download,
+  Columns3,
+  GripVertical,
+  Plus,
+  Filter,
+  Clock3,
+  AlertTriangle,
+  Check,
+  ChevronsUpDown,
+  X,
+} from 'lucide-react';
 import { api } from '@/src/api';
 import { Ticket } from '@/src/types';
 import { StatusBadge, PriorityBadge } from '@/src/components/ui/Badge';
 import { formatDate, getSlaStatus } from '@/src/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { AlertCircle, Clock, CheckSquare } from 'lucide-react';
+import { AlertCircle, Clock, CheckSquare, Paperclip } from 'lucide-react';
 import { useToast } from '@/src/components/ui/Toast';
 
 const COLORS = ['#17202b', '#4a5568', '#a0aec0', '#e2e8f0'];
 const PRIORITY_COLORS = {
+  Critical: '#be123c',
   High: '#ef4444',
   Medium: '#f59e0b',
   Low: '#10b981',
 };
 
 const PRIORITY_ROW_BORDERS = {
+  Critical: 'border-l-danger',
   High: 'border-l-danger',
   Medium: 'border-l-warning',
   Low: 'border-l-success',
 } as const;
 
 const KANBAN_COLUMNS: Ticket['status'][] = ['Open', 'In Progress', 'Resolved', 'Closed'];
+const DASHBOARD_REFRESH_INTERVAL = 15000;
 
 export function TicketsDashboard() {
   const navigate = useNavigate();
@@ -35,6 +53,8 @@ export function TicketsDashboard() {
   // Bulk Actions State
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [draggedTicketId, setDraggedTicketId] = useState<string | null>(null);
+  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
 
   // Filters
   const search = searchParams.get('search') || '';
@@ -45,7 +65,12 @@ export function TicketsDashboard() {
   // Pagination & Sorting
   const limit = 10;
   const page = Math.max(1, Number(searchParams.get('page')) || 1);
-  const sort = (searchParams.get('sort') || '') as 'date' | 'priority' | '';
+  const sortFields =
+    searchParams
+      .get('sort')
+      ?.split(',')
+      .filter((field) => ['date', 'priority', 'status'].includes(field)) || [];
+  const sort = sortFields.join(',');
   const viewMode = searchParams.get('view') === 'kanban' ? 'kanban' : 'table';
 
   const updateSearchParams = (updates: Record<string, string>) => {
@@ -60,25 +85,74 @@ export function TicketsDashboard() {
   const ticketsQuery = useQuery({
     queryKey: ['tickets', { search, status, priority, customerId, page, sort }],
     queryFn: () => api.getTickets({ search, status, priority, customerId, limit, offset: (page - 1) * limit, sort }),
+    refetchInterval: DASHBOARD_REFRESH_INTERVAL,
   });
-  const customersQuery = useQuery({ queryKey: ['customers'], queryFn: api.getCustomers });
+  const customersQuery = useQuery({
+    queryKey: ['customers'],
+    queryFn: api.getCustomers,
+    refetchInterval: DASHBOARD_REFRESH_INTERVAL,
+  });
   const currentUser = JSON.parse(localStorage.getItem('auth_user') || 'null');
+  const staffProfileQuery = useQuery({
+    queryKey: ['profile'],
+    queryFn: api.getProfile,
+    enabled: currentUser?.role === 'staff',
+    refetchInterval: DASHBOARD_REFRESH_INTERVAL,
+  });
+  const availabilityMutation = useMutation({
+    mutationFn: api.updateAvailability,
+    onMutate: async (isAvailable) => {
+      await queryClient.cancelQueries({ queryKey: ['profile'] });
+      const previousProfile = queryClient.getQueryData<typeof staffProfileQuery.data>(['profile']);
+      if (previousProfile) queryClient.setQueryData(['profile'], { ...previousProfile, isAvailable });
+      return { previousProfile };
+    },
+    onError: (error: Error, _isAvailable, context) => {
+      if (context?.previousProfile) queryClient.setQueryData(['profile'], context.previousProfile);
+      showToast(error.message || 'Could not update availability.', 'error');
+    },
+    onSuccess: (updatedProfile) => {
+      queryClient.setQueryData(['profile'], updatedProfile);
+      localStorage.setItem('auth_user', JSON.stringify(updatedProfile));
+      showToast(
+        updatedProfile.isAvailable === false
+          ? 'You are now unavailable for new assignments.'
+          : 'You are available for new assignments.',
+      );
+    },
+  });
   const adminUsersQuery = useQuery({
     queryKey: ['admin-users'],
     queryFn: api.getAdminUsers,
     enabled: currentUser?.role === 'admin',
+    refetchInterval: DASHBOARD_REFRESH_INTERVAL,
   });
-  const statsQuery = useQuery({ queryKey: ['ticket-stats'], queryFn: api.getTicketStats });
+  const statsQuery = useQuery({
+    queryKey: ['ticket-stats'],
+    queryFn: api.getTicketStats,
+    refetchInterval: DASHBOARD_REFRESH_INTERVAL,
+  });
   const bulkStatusMutation = useMutation({
     mutationFn: ({ ticketIds, newStatus }: { ticketIds: string[]; newStatus: Ticket['status'] }) =>
       api.updateBulkStatus(ticketIds, newStatus),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tickets'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      queryClient.invalidateQueries({ queryKey: ['ticket-stats'] });
+    },
   });
 
   const tickets = ticketsQuery.data?.tickets || [];
   const total = ticketsQuery.data?.total || 0;
   const customers = customersQuery.data || [];
   const adminUsers = adminUsersQuery.data || [];
+  const assignmentGroups = Array.from(
+    new Set(
+      adminUsers
+        .filter((user) => user.role === 'staff')
+        .map((user) => user.team)
+        .filter(Boolean),
+    ),
+  );
   const stats = statsQuery.data || null;
   const loading = ticketsQuery.isPending || customersQuery.isPending || statsQuery.isPending;
   const error = ticketsQuery.error?.message || customersQuery.error?.message || statsQuery.error?.message || null;
@@ -93,14 +167,43 @@ export function TicketsDashboard() {
     setSelectedIds(new Set());
   }, [page, sort]);
 
+  useEffect(() => {
+    const closeSortMenu = (event: MouseEvent) => {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
+        setIsSortMenuOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsSortMenuOpen(false);
+    };
+    document.addEventListener('mousedown', closeSortMenu);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeSortMenu);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, []);
+
   const hasFilters = search || status || priority || customerId;
+  const getStatValue = (items: { name: string; value: number }[] | undefined, name: string) =>
+    items?.find((item) => item.name === name)?.value || 0;
+  const openCount = getStatValue(stats?.status, 'Open');
+  const inProgressCount = getStatValue(stats?.status, 'In Progress');
+  const activeRequests = openCount + inProgressCount;
+  const highPriorityCount = getStatValue(stats?.priority, 'High');
   const clearFilters = () => {
     setSearchParams(new URLSearchParams());
   };
 
-  const handleSort = (field: 'date' | 'priority') => {
-    updateSearchParams({ sort: sort === field ? '' : field, page: '' });
+  const handleSort = (field: 'date' | 'priority' | 'status') => {
+    const nextSortFields = sortFields.includes(field)
+      ? sortFields.filter((currentField) => currentField !== field)
+      : [...sortFields, field];
+    updateSearchParams({ sort: nextSortFields.join(','), page: '' });
   };
+
+  const sortLabels: Record<string, string> = { date: 'Newest', priority: 'Priority', status: 'Status' };
+  const sortSummary = sortFields.length ? sortFields.map((field) => sortLabels[field]).join(', ') : 'Default';
 
   const handleExportCSV = () => {
     if (tickets.length === 0) return;
@@ -140,12 +243,33 @@ export function TicketsDashboard() {
   };
 
   const isUpdatingBulk = bulkStatusMutation.isPending;
+  const bulkAssignmentMutation = useMutation({
+    mutationFn: (assignedTo: string) => api.assignTickets(Array.from(selectedIds), assignedTo),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      queryClient.invalidateQueries({ queryKey: ['ticket-stats'] });
+      showToast(
+        `Assigned ${result.assignedCount} ticket${result.assignedCount === 1 ? '' : 's'} to the selected staff member.`,
+      );
+      setSelectedIds(new Set());
+    },
+  });
+
+  const handleBulkAssignment = async (assignedTo: string) => {
+    if (!assignedTo || selectedIds.size === 0) return;
+    try {
+      await bulkAssignmentMutation.mutateAsync(assignedTo);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to assign tickets', 'error');
+    }
+  };
 
   const handleKanbanStatusChange = async (ticket: Ticket, newStatus: Ticket['status']) => {
     if (ticket.status === newStatus || ticket.status === 'Closed') return;
     try {
       await api.updateTicket(ticket.id, { ...ticket, status: newStatus, notifyUser: true });
       await queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      await queryClient.invalidateQueries({ queryKey: ['ticket-stats'] });
       showToast(`Ticket moved to ${newStatus}`);
     } catch (err: any) {
       showToast(err.message || 'Unable to update ticket status', 'error');
@@ -168,23 +292,84 @@ export function TicketsDashboard() {
       animate={{ opacity: 1, y: 0 }}
       className="space-y-6 pb-20 relative min-h-[calc(100vh-100px)]"
     >
-      {/* Header */}
-      <div className="bg-surface pb-4">
-        <div className="flex flex-col items-center py-12">
-          <p className="text-[10px] sm:text-xs font-mono font-bold text-ink-muted uppercase tracking-[0.2em] mb-4">
-            Support Ops
-          </p>
-          <div className="flex w-full justify-between items-center px-6">
-            <span className="font-mono text-xs font-semibold text-ink uppercase tracking-wider">
-              {total} Active Requests
-            </span>
-            <span className="font-mono text-xs font-semibold text-ink uppercase tracking-wider">
-              {customers.length} Customers
-            </span>
+      {/* Queue summary */}
+      <section className="bg-surface border-2 border-ink rounded-md px-5 py-6 sm:px-8 sm:py-7">
+        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
+          <div>
+            <p className="text-[10px] sm:text-xs font-mono font-bold text-ink-muted uppercase tracking-[0.2em] mb-3">
+              Support operations
+            </p>
+            <h1 className="text-3xl sm:text-4xl font-black tracking-tight">
+              {currentUser?.role === 'staff' ? 'My assigned work' : 'Ticket queue'}
+            </h1>
+            <p className="text-sm text-ink-muted mt-2 max-w-xl">
+              Prioritize open work, keep customer commitments visible, and move each request toward resolution.
+            </p>
+          </div>
+          <Link
+            to="/tickets/new"
+            className="inline-flex items-center justify-center gap-2 bg-ink text-white rounded-full px-4 py-2.5 text-xs font-mono font-bold uppercase tracking-wider hover:bg-ink/90 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Create ticket
+          </Link>
+          {currentUser?.role === 'staff' && (
+            <label className="inline-flex items-center gap-3 border-2 border-ink rounded-full px-4 py-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label="Available for new assignments"
+                checked={staffProfileQuery.data?.isAvailable !== false}
+                disabled={availabilityMutation.isPending || staffProfileQuery.isPending}
+                onChange={(event) => availabilityMutation.mutate(event.target.checked)}
+                className="h-4 w-4 accent-success"
+              />
+              <span className="text-xs font-mono font-bold uppercase">
+                {staffProfileQuery.data?.isAvailable !== false ? 'Available' : 'Unavailable'}
+              </span>
+            </label>
+          )}
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-7 pt-5 border-t border-line">
+          <div className="flex items-center gap-3">
+            <Clock3 className="w-4 h-4 text-ink-muted" />
+            <div>
+              <p className="font-mono text-[10px] uppercase text-ink-muted">Active now</p>
+              <p className="text-xl font-black">{stats ? activeRequests : total}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Filter className="w-4 h-4 text-ink-muted" />
+            <div>
+              <p className="font-mono text-[10px] uppercase text-ink-muted">Open / working</p>
+              <p className="text-xl font-black">
+                {openCount} / {inProgressCount}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-4 h-4 text-danger" />
+            <div>
+              <p className="font-mono text-[10px] uppercase text-ink-muted">High priority</p>
+              <p className="text-xl font-black">{highPriorityCount}</p>
+            </div>
+          </div>
+          <div>
+            <p className="font-mono text-[10px] uppercase text-ink-muted">Customers</p>
+            <p className="text-xl font-black">{customers.length}</p>
           </div>
         </div>
-        <hr className="border-t-[1.5px] border-ink" />
-      </div>
+        {hasFilters && (
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 bg-surface-muted/50 border border-line rounded-md px-3 py-2.5">
+            <p className="text-xs text-ink-muted">
+              Showing <span className="font-bold text-ink">{total}</span> matching {total === 1 ? 'ticket' : 'tickets'}
+            </p>
+            <button type="button" onClick={clearFilters} className="text-xs font-mono font-bold uppercase underline">
+              Clear filters
+            </button>
+          </div>
+        )}
+      </section>
 
       <div className="px-4 sm:px-6">
         {stats && (
@@ -325,15 +510,25 @@ export function TicketsDashboard() {
 
         <div className="mb-6 flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-muted" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-muted pointer-events-none" />
             <input
               type="text"
               aria-label="Search tickets by title or customer"
               placeholder="Search by title or customer..."
               value={search}
               onChange={(e) => updateSearchParams({ search: e.target.value, page: '' })}
-              className="w-full pl-11 pr-4 py-2 bg-surface border-2 border-ink rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-navy transition-colors"
+              className="w-full h-11 pl-10 pr-10 bg-surface border-2 border-ink rounded-md text-sm font-medium text-ink placeholder:text-ink-muted/80 focus:outline-none focus:ring-2 focus:ring-navy/30 focus:border-navy transition-colors"
             />
+            {search && (
+              <button
+                type="button"
+                aria-label="Clear ticket search"
+                onClick={() => updateSearchParams({ search: '', page: '' })}
+                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-7 h-7 rounded-full text-ink-muted hover:bg-line/30 hover:text-ink transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
           <select
             aria-label="Filter tickets by status"
@@ -355,9 +550,60 @@ export function TicketsDashboard() {
           >
             <option value="">All Priorities</option>
             <option value="High">High</option>
+            <option value="Critical">Critical</option>
             <option value="Medium">Medium</option>
             <option value="Low">Low</option>
           </select>
+          <div ref={sortMenuRef} className="relative">
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={isSortMenuOpen}
+              aria-label="Sort tickets by multiple fields"
+              onClick={() => setIsSortMenuOpen((open) => !open)}
+              className="min-w-[9.5rem] flex items-center justify-between gap-3 px-3 py-2 bg-surface border-2 border-ink rounded-md text-xs font-mono font-bold uppercase hover:bg-line/20 transition-colors"
+            >
+              <span className="flex flex-col items-start min-w-0">
+                <span className="text-[10px] text-ink-muted">Sort by</span>
+                <span className="normal-case truncate max-w-[8rem]">{sortSummary}</span>
+              </span>
+              <ChevronsUpDown className="w-4 h-4 shrink-0" />
+            </button>
+            {isSortMenuOpen && (
+              <div
+                role="menu"
+                aria-label="Sort options"
+                className="absolute z-20 right-0 mt-2 w-52 bg-surface border-2 border-ink rounded-md p-2 shadow-[4px_4px_0px_0px_rgba(23,32,43,1)]"
+              >
+                <p className="px-2 py-1 text-[10px] font-mono font-bold uppercase tracking-wider text-ink-muted">
+                  Add sort criteria
+                </p>
+                {(['date', 'priority', 'status'] as const).map((field) => (
+                  <label
+                    key={field}
+                    className="flex items-center gap-3 px-2 py-2 rounded hover:bg-line/20 cursor-pointer text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={sortFields.includes(field)}
+                      onChange={() => handleSort(field)}
+                      className="w-4 h-4 accent-ink"
+                    />
+                    <span className="flex-1">{sortLabels[field]}</span>
+                    {sortFields.includes(field) && <Check className="w-4 h-4" />}
+                  </label>
+                ))}
+                <button
+                  type="button"
+                  disabled={!sortFields.length}
+                  onClick={() => updateSearchParams({ sort: '', page: '' })}
+                  className="w-full mt-1 pt-2 border-t border-line text-left px-2 text-xs font-mono font-bold uppercase underline disabled:opacity-40 disabled:no-underline"
+                >
+                  Clear sorting
+                </button>
+              </div>
+            )}
+          </div>
           <button
             onClick={handleExportCSV}
             disabled={tickets.length === 0}
@@ -455,16 +701,35 @@ export function TicketsDashboard() {
                       Update status:
                     </span>
                     <div className="flex flex-wrap items-center gap-2">
-                      {['Open', 'In Progress', 'Resolved', 'Closed'].map((s) => (
-                        <button
-                          key={s}
-                          onClick={() => handleBulkStatusUpdate(s as any)}
-                          disabled={isUpdatingBulk}
-                          className="px-3 py-1.5 bg-canvas border border-line rounded-md text-xs font-mono font-bold text-ink uppercase tracking-wider hover:bg-line/20 transition-colors disabled:opacity-50"
+                      {currentUser?.role === 'admin' && (
+                        <select
+                          aria-label="Assign selected tickets to staff"
+                          defaultValue=""
+                          disabled={bulkAssignmentMutation.isPending}
+                          onChange={(event) => void handleBulkAssignment(event.target.value)}
+                          className="bg-canvas border border-line rounded-md px-3 py-1.5 text-xs font-mono font-bold uppercase disabled:opacity-50"
                         >
-                          {s}
-                        </button>
-                      ))}
+                          <option value="">Assign to staff...</option>
+                          {adminUsers
+                            .filter((user) => user.role === 'staff')
+                            .map((user) => (
+                              <option key={user.id} value={user.id} disabled={user.isAvailable === false}>
+                                {user.displayName || user.username} {user.isAvailable === false ? '(Unavailable)' : ''}
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                      {currentUser?.role !== 'admin' &&
+                        ['Open', 'In Progress', 'Resolved', 'Closed'].map((s) => (
+                          <button
+                            key={s}
+                            onClick={() => handleBulkStatusUpdate(s as any)}
+                            disabled={isUpdatingBulk}
+                            className="px-3 py-1.5 bg-canvas border border-line rounded-md text-xs font-mono font-bold text-ink uppercase tracking-wider hover:bg-line/20 transition-colors disabled:opacity-50"
+                          >
+                            {s}
+                          </button>
+                        ))}
                     </div>
                   </div>
                 </motion.div>
@@ -475,7 +740,7 @@ export function TicketsDashboard() {
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4" aria-label="Ticket kanban board">
                 {KANBAN_COLUMNS.map((column) => {
                   const columnTickets = tickets.filter((ticket) => ticket.status === column);
-                  const isDropTarget = column !== 'Closed';
+                  const isDropTarget = currentUser?.role !== 'admin' && column !== 'Closed';
                   return (
                     <section
                       key={column}
@@ -497,10 +762,10 @@ export function TicketsDashboard() {
                         {columnTickets.map((ticket) => (
                           <article
                             key={ticket.id}
-                            draggable={ticket.status !== 'Closed'}
+                            draggable={currentUser?.role !== 'admin' && ticket.status !== 'Closed'}
                             onDragStart={() => setDraggedTicketId(ticket.id)}
                             onDragEnd={() => setDraggedTicketId(null)}
-                            className={`bg-canvas border-2 border-ink border-l-4 ${PRIORITY_ROW_BORDERS[ticket.priority]} rounded-md p-3 ${ticket.status !== 'Closed' ? 'cursor-grab active:cursor-grabbing' : 'opacity-80'}`}
+                            className={`bg-canvas border-2 border-ink border-l-4 ${PRIORITY_ROW_BORDERS[ticket.priority]} rounded-md p-3 ${currentUser?.role !== 'admin' && ticket.status !== 'Closed' ? 'cursor-grab active:cursor-grabbing' : 'opacity-80'}`}
                           >
                             <button
                               type="button"
@@ -521,8 +786,31 @@ export function TicketsDashboard() {
                                   {ticket.category}
                                 </span>
                               </div>
+                              {ticket.attachments && ticket.attachments.length > 0 && (
+                                <div className="mt-3 flex flex-wrap gap-1.5">
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-mono text-ink-muted">
+                                    <Paperclip className="w-3 h-3" /> {ticket.attachments.length} file
+                                    {ticket.attachments.length > 1 ? 's' : ''}
+                                  </span>
+                                </div>
+                              )}
                             </button>
-                            {ticket.status !== 'Closed' && (
+                            {ticket.attachments && ticket.attachments.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-1.5" onClick={(event) => event.stopPropagation()}>
+                                {ticket.attachments.map((attachment) => (
+                                  <a
+                                    key={`${attachment.name}-${attachment.size}`}
+                                    href={attachment.data}
+                                    download={attachment.name}
+                                    title={`Download ${attachment.name}`}
+                                    className="max-w-full truncate rounded border border-ink px-2 py-1 text-[10px] font-mono hover:bg-ink hover:text-white"
+                                  >
+                                    {attachment.name}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                            {currentUser?.role !== 'admin' && ticket.status !== 'Closed' && (
                               <select
                                 aria-label={`Move ${ticket.title} to status`}
                                 value={ticket.status}
@@ -579,18 +867,24 @@ export function TicketsDashboard() {
                       </th>
                       <th className="p-4 font-mono text-xs font-bold text-ink uppercase tracking-wider">
                         <button
+                          type="button"
                           onClick={() => handleSort('priority')}
+                          aria-pressed={sortFields.includes('priority')}
                           className="flex items-center gap-1 hover:opacity-70 transition-opacity"
                         >
                           Priority <ArrowUpDown className="w-3 h-3" />
                         </button>
                       </th>
                       <th className="p-4 font-mono text-xs font-bold text-ink uppercase tracking-wider">Status</th>
+                      <th className="p-4 font-mono text-xs font-bold text-ink uppercase tracking-wider">Activity</th>
                       <th className="p-4 font-mono text-xs font-bold text-ink uppercase tracking-wider">Assigned</th>
+                      <th className="p-4 font-mono text-xs font-bold text-ink uppercase tracking-wider">Files</th>
                       <th className="p-4 font-mono text-xs font-bold text-ink uppercase tracking-wider">SLA / Due</th>
                       <th className="p-4 font-mono text-xs font-bold text-ink uppercase tracking-wider">
                         <button
+                          type="button"
                           onClick={() => handleSort('date')}
+                          aria-pressed={sortFields.includes('date')}
                           className="flex items-center gap-1 hover:opacity-70 transition-opacity"
                         >
                           Date <ArrowUpDown className="w-3 h-3" />
@@ -602,7 +896,7 @@ export function TicketsDashboard() {
                     <AnimatePresence>
                       {tickets.length === 0 ? (
                         <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border-b-2 border-line">
-                          <td colSpan={9} className="p-8 text-center">
+                          <td colSpan={11} className="p-8 text-center">
                             <div className="flex flex-col items-center justify-center gap-2">
                               <CheckSquare className="w-8 h-8 text-ink-muted" />
                               <p className="font-sans font-bold text-ink">No tickets found.</p>
@@ -649,26 +943,88 @@ export function TicketsDashboard() {
                             <td className="p-4">
                               <StatusBadge status={ticket.status} />
                             </td>
+                            <td className="p-4">
+                              <span className="inline-flex max-w-[170px] items-center gap-1.5 text-xs font-medium text-ink-muted">
+                                <span
+                                  className={`w-2 h-2 rounded-full shrink-0 ${ticket.activityStatus === 'Unread' ? 'bg-danger' : ticket.activityStatus === 'Awaiting technician response' ? 'bg-warning' : 'bg-success'}`}
+                                />
+                                <span className="truncate">{ticket.activityStatus || 'Unread'}</span>
+                              </span>
+                            </td>
                             <td className="p-4" onClick={(event) => event.stopPropagation()}>
-                              {currentUser?.role === 'admin' && (
-                                <select
-                                  aria-label={`Assign ${ticket.title}`}
-                                  value={(ticket as any).assignedTo?.id || (ticket as any).assignedTo || ''}
-                                  onChange={async (event) => {
-                                    await api.assignTicket(ticket.id, event.target.value || null);
-                                    await queryClient.invalidateQueries({ queryKey: ['tickets'] });
-                                  }}
-                                  className="max-w-[150px] border border-ink rounded px-2 py-1 text-xs font-mono"
-                                >
-                                  <option value="">Unassigned</option>
-                                  {adminUsers
-                                    .filter((user) => user.role === 'staff')
-                                    .map((user) => (
-                                      <option key={user.id} value={user.id}>
-                                        {user.displayName || user.username}
+                              {currentUser?.role === 'admin' ? (
+                                <div className="flex flex-col gap-1">
+                                  <select
+                                    aria-label={`Assign group for ${ticket.title}`}
+                                    value={ticket.assignedGroup || ''}
+                                    onChange={async (event) => {
+                                      await api.assignTicket(ticket.id, {
+                                        assignedTo:
+                                          (ticket as any).assignedTo?.id || (ticket as any).assignedTo || null,
+                                        assignedGroup: event.target.value || null,
+                                      });
+                                      await queryClient.invalidateQueries({ queryKey: ['tickets'] });
+                                    }}
+                                    className="max-w-[150px] border border-ink rounded px-2 py-1 text-xs font-mono"
+                                  >
+                                    <option value="">No group</option>
+                                    {assignmentGroups.map((group) => (
+                                      <option key={group} value={group}>
+                                        {group}
                                       </option>
                                     ))}
-                                </select>
+                                  </select>
+                                  <select
+                                    aria-label={`Assign staff for ${ticket.title}`}
+                                    value={(ticket as any).assignedTo?.id || (ticket as any).assignedTo || ''}
+                                    onChange={async (event) => {
+                                      const staff = adminUsers.find((user) => user.id === event.target.value);
+                                      await api.assignTicket(ticket.id, {
+                                        assignedTo: event.target.value || null,
+                                        assignedGroup: ticket.assignedGroup || staff?.team || null,
+                                      });
+                                      await queryClient.invalidateQueries({ queryKey: ['tickets'] });
+                                    }}
+                                    className="max-w-[150px] border border-ink rounded px-2 py-1 text-xs font-mono"
+                                  >
+                                    <option value="">Unassigned</option>
+                                    {adminUsers
+                                      .filter((user) => user.role === 'staff')
+                                      .map((user) => (
+                                        <option key={user.id} value={user.id} disabled={user.isAvailable === false}>
+                                          {user.displayName || user.username}{' '}
+                                          {user.isAvailable === false ? '(Unavailable)' : '(Available)'}
+                                        </option>
+                                      ))}
+                                  </select>
+                                </div>
+                              ) : (
+                                <span className="text-xs font-mono text-ink-muted">
+                                  {ticket.assignedGroup || 'Assigned task'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-4" onClick={(event) => event.stopPropagation()}>
+                              {ticket.attachments && ticket.attachments.length > 0 ? (
+                                <div className="flex flex-col items-start gap-1">
+                                  <span className="inline-flex items-center gap-1 text-xs font-mono text-ink-muted">
+                                    <Paperclip className="w-3 h-3" />
+                                    {ticket.attachments.length}
+                                  </span>
+                                  {ticket.attachments.map((attachment) => (
+                                    <a
+                                      key={`${attachment.name}-${attachment.size}`}
+                                      href={attachment.data}
+                                      download={attachment.name}
+                                      className="max-w-[140px] truncate text-[10px] font-mono underline hover:text-navy"
+                                      title={attachment.name}
+                                    >
+                                      {attachment.name}
+                                    </a>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-ink-muted">None</span>
                               )}
                             </td>
                             <td className="p-4">
@@ -733,7 +1089,7 @@ export function TicketsDashboard() {
 
       <Link
         to="/tickets/new"
-        className="fixed bottom-8 right-8 bg-ink text-white rounded-full pl-4 pr-6 py-4 flex items-center gap-3 shadow-[4px_4px_0px_0px_rgba(23,32,43,0.5)] hover:shadow-[6px_6px_0px_0px_rgba(23,32,43,0.7)] hover:-translate-y-1 transition-all z-50 group"
+        className="fixed bottom-8 right-8 bg-ink text-white rounded-full pl-4 pr-6 py-4 flex items-center gap-3 shadow-none hover:shadow-[6px_6px_0px_0px_rgba(23,32,43,0.7)] hover:-translate-y-1 transition-all z-50 group"
       >
         <div className="w-6 h-6 rounded-full bg-white text-ink flex items-center justify-center font-bold text-lg leading-none">
           +

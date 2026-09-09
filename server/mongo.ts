@@ -3,15 +3,24 @@ import bcrypt from 'bcryptjs';
 
 export async function connectMongoDB() {
   mongoose.set('bufferCommands', false);
-  const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost/mock';
+  const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost/mock';
 
   try {
-    await mongoose.connect(MONGODB_URI);
+    await mongoose.connect(MONGO_URI);
     console.log('Successfully connected to MongoDB.');
     await seedDatabase();
   } catch (_error) {
-    console.warn('MongoDB not connected — some features may not work');
+    console.warn('MongoDB not connected — API health will report the database as unavailable');
   }
+}
+
+export function getMongoConnectionState() {
+  return {
+    connected: mongoose.connection.readyState === 1,
+    state: mongoose.connection.readyState,
+    host: mongoose.connection.host || null,
+    database: mongoose.connection.name || null,
+  };
 }
 
 const customerSchema = new mongoose.Schema(
@@ -35,21 +44,48 @@ customerSchema.set('toJSON', {
 
 export const Customer = mongoose.model('Customer', customerSchema);
 
+const ticketAttachmentSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    type: { type: String, required: true },
+    size: { type: Number, required: true },
+    data: { type: String, required: true },
+  },
+  { _id: false },
+);
+
 const ticketSchema = new mongoose.Schema(
   {
     customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true, index: true },
     title: { type: String, required: true, index: true },
     description: { type: String, required: true },
-    priority: { type: String, enum: ['Low', 'Medium', 'High'], required: true, index: true },
+    priority: { type: String, enum: ['Low', 'Medium', 'High', 'Critical'], required: true, index: true },
     status: { type: String, enum: ['Open', 'In Progress', 'Resolved', 'Closed'], required: true, index: true },
+    activityStatus: {
+      type: String,
+      enum: ['Unread', 'Read', 'Awaiting customer response', 'Awaiting technician response'],
+      default: 'Unread',
+      index: true,
+    },
     category: {
       type: String,
       enum: ['Technical', 'Sales', 'Billing', 'Account', 'Other'],
       default: 'Technical',
       index: true,
     },
+    assignmentType: { type: String, enum: ['Incident', 'Problem', 'Request', 'Change'], default: 'Incident' },
+    contract: { type: String, default: '' },
+    ticketForm: { type: String, default: '' },
+    impact: {
+      type: String,
+      enum: ['No Impact', 'Site Down', 'Server Issue', 'Minor', 'Major', 'Crisis'],
+      default: 'No Impact',
+    },
+    productFamily: { type: String, default: '' },
+    attachments: { type: [ticketAttachmentSchema], default: [] },
     dueDate: { type: Date },
     deletedAt: { type: Date, default: null },
+    assignedGroup: { type: String, default: '', index: true },
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
   },
   { timestamps: true },
@@ -119,6 +155,7 @@ const userSchema = new mongoose.Schema(
     phone: { type: String, default: '' },
     team: { type: String, default: '' },
     branch: { type: String, default: '' },
+    isAvailable: { type: Boolean, default: true, index: true },
   },
   { timestamps: true },
 );
