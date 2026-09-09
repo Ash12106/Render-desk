@@ -249,6 +249,10 @@ export async function buildApp() {
     }
   });
 
+  app.get('/api/auth/config', (_req, res) => {
+    res.json({ googleClientId: googleClientId || null });
+  });
+
   app.post('/api/customer-auth/register', mutationLimiter, async (req, res) => {
     try {
       const data = customerRegistrationSchema.parse(req.body);

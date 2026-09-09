@@ -187,10 +187,15 @@ The Docker image builds the frontend and bundled server with Node.js 24 Alpine. 
 - **Render service name:** `support-ops-desk`
 
 Required Render variables are `MONGO_URI`, `PORT`, `CORS_ORIGIN`,
-`ADMIN_PASSWORD`, `GOOGLE_CLIENT_ID`, `VITE_GOOGLE_CLIENT_ID`, and
+`ADMIN_PASSWORD`, `GOOGLE_CLIENT_ID`, and
 `NODE_ENV=production`. Use `https://render-desk.onrender.com` as the production
 `CORS_ORIGIN`. Keep database credentials and OAuth values in Render's environment
 settings, not in this file.
+
+`GOOGLE_CLIENT_ID` is read by the server at runtime. The frontend reads the
+public client ID from `/api/auth/config`, so Docker does not need a
+`VITE_GOOGLE_CLIENT_ID` build argument. Keeping `VITE_GOOGLE_CLIENT_ID` set is
+still supported for local or static frontend builds.
 
 For Google sign-in, add both `http://localhost:3000` and
 `https://render-desk.onrender.com` under the OAuth client's **Authorized JavaScript
