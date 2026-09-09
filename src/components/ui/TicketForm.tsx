@@ -508,7 +508,10 @@ export function TicketForm({
           </div>
 
           <div className="relative">
-            <label htmlFor="ticketForm" className="mb-1.5 block font-mono text-[10px] font-bold uppercase text-ink-muted">
+            <label
+              htmlFor="ticketForm"
+              className="mb-1.5 block font-mono text-[10px] font-bold uppercase text-ink-muted"
+            >
               Ticket form
             </label>
             <select
@@ -574,7 +577,9 @@ export function TicketForm({
               onChange={(e) => void handleAttachments(e.target.files)}
               className="sr-only"
             />
-            <p className="text-xs text-ink-muted mt-1">Up to 5 files, 5 MB each. Avoid passwords and payment details.</p>
+            <p className="text-xs text-ink-muted mt-1">
+              Up to 5 files, 5 MB each. Avoid passwords and payment details.
+            </p>
             {attachmentError && <p className="font-mono text-xs text-danger mt-2">{attachmentError}</p>}
             {!!formData.attachments?.length && (
               <div className="flex flex-wrap gap-2 mt-3">
