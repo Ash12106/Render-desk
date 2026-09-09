@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #f4f4f5; /* Clean light zinc for background */
+  --color-surface: #ffffff; /* Pure white for cards */
+  --color-surface-muted: #e4e4e7;
+  --color-ink: #09090b; /* Near black for maximum contrast */
+  --color-ink-muted: #52525b; /* Zinc 600 for secondary text */
+  --color-line: #d4d4d8; /* Zinc 300 for soft borders */
+  
+  --color-navy: #1e3a8a;
+  --color-navy-deep: #172554;
+  --color-focus: #2563eb;
+  
+  --color-success: #15803d; /* Green 700 - passes AA with white text */
+  --color-success-bg: #dcfce7;
+  
+  --color-warning: #b45309; /* Amber 700 - passes AA with white text */
+  --color-warning-bg: #fef3c7;
+  
+  --color-danger: #e11d48; /* Rose 600 - passes AA with white text */
+  --color-danger-bg: #ffe4e6;
+  
+  --color-info: #0284c7; /* Sky 600 - passes AA with white text */
+  --color-info-bg: #e0f2fe;
+  
+  --color-neutral-bg: #f4f4f5;
+
+  --font-serif: 'Nunito', sans-serif;
+  --font-sans: 'Nunito', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+  }
+}
+

@@ -1,0 +1,745 @@
+import React, { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Search, ChevronLeft, ChevronRight, ArrowUpDown, Download, Columns3, GripVertical } from 'lucide-react';
+import { api } from '@/src/api';
+import { Ticket } from '@/src/types';
+import { StatusBadge, PriorityBadge } from '@/src/components/ui/Badge';
+import { formatDate, getSlaStatus } from '@/src/lib/utils';
+import { motion, AnimatePresence } from 'motion/react';
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { AlertCircle, Clock, CheckSquare } from 'lucide-react';
+import { useToast } from '@/src/components/ui/Toast';
+
+const COLORS = ['#17202b', '#4a5568', '#a0aec0', '#e2e8f0'];
+const PRIORITY_COLORS = {
+  High: '#ef4444',
+  Medium: '#f59e0b',
+  Low: '#10b981',
+};
+
+const PRIORITY_ROW_BORDERS = {
+  High: 'border-l-danger',
+  Medium: 'border-l-warning',
+  Low: 'border-l-success',
+} as const;
+
+const KANBAN_COLUMNS: Ticket['status'][] = ['Open', 'In Progress', 'Resolved', 'Closed'];
+
+export function TicketsDashboard() {
+  const navigate = useNavigate();
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Bulk Actions State
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [draggedTicketId, setDraggedTicketId] = useState<string | null>(null);
+
+  // Filters
+  const search = searchParams.get('search') || '';
+  const status = searchParams.get('status') || '';
+  const priority = searchParams.get('priority') || '';
+  const customerId = searchParams.get('customerId') || '';
+
+  // Pagination & Sorting
+  const limit = 10;
+  const page = Math.max(1, Number(searchParams.get('page')) || 1);
+  const sort = (searchParams.get('sort') || '') as 'date' | 'priority' | '';
+  const viewMode = searchParams.get('view') === 'kanban' ? 'kanban' : 'table';
+
+  const updateSearchParams = (updates: Record<string, string>) => {
+    const next = new URLSearchParams(searchParams);
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    });
+    setSearchParams(next);
+  };
+
+  const ticketsQuery = useQuery({
+    queryKey: ['tickets', { search, status, priority, customerId, page, sort }],
+    queryFn: () => api.getTickets({ search, status, priority, customerId, limit, offset: (page - 1) * limit, sort }),
+  });
+  const customersQuery = useQuery({ queryKey: ['customers'], queryFn: api.getCustomers });
+  const currentUser = JSON.parse(localStorage.getItem('auth_user') || 'null');
+  const adminUsersQuery = useQuery({
+    queryKey: ['admin-users'],
+    queryFn: api.getAdminUsers,
+    enabled: currentUser?.role === 'admin',
+  });
+  const statsQuery = useQuery({ queryKey: ['ticket-stats'], queryFn: api.getTicketStats });
+  const bulkStatusMutation = useMutation({
+    mutationFn: ({ ticketIds, newStatus }: { ticketIds: string[]; newStatus: Ticket['status'] }) =>
+      api.updateBulkStatus(ticketIds, newStatus),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tickets'] }),
+  });
+
+  const tickets = ticketsQuery.data?.tickets || [];
+  const total = ticketsQuery.data?.total || 0;
+  const customers = customersQuery.data || [];
+  const adminUsers = adminUsersQuery.data || [];
+  const stats = statsQuery.data || null;
+  const loading = ticketsQuery.isPending || customersQuery.isPending || statsQuery.isPending;
+  const error = ticketsQuery.error?.message || customersQuery.error?.message || statsQuery.error?.message || null;
+
+  // Reset page and selections when filters change
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [search, status, priority, customerId]);
+
+  // Reset selections when page changes
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [page, sort]);
+
+  const hasFilters = search || status || priority || customerId;
+  const clearFilters = () => {
+    setSearchParams(new URLSearchParams());
+  };
+
+  const handleSort = (field: 'date' | 'priority') => {
+    updateSearchParams({ sort: sort === field ? '' : field, page: '' });
+  };
+
+  const handleExportCSV = () => {
+    if (tickets.length === 0) return;
+
+    const headers = ['ID', 'Title', 'Customer', 'Priority', 'Status', 'Due Date', 'Created At'];
+    const rows = tickets.map((t) => [
+      t.id,
+      `"${t.title.replace(/"/g, '""')}"`,
+      `"${t.customerName || ''}"`,
+      t.priority,
+      t.status,
+      t.dueDate ? new Date(t.dueDate).toISOString().split('T')[0] : '',
+      new Date(t.createdAt).toISOString().split('T')[0],
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `tickets_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleBulkStatusUpdate = async (newStatus: Ticket['status']) => {
+    if (selectedIds.size === 0) return;
+    try {
+      const idsArray = Array.from(selectedIds) as string[];
+      await bulkStatusMutation.mutateAsync({ ticketIds: idsArray, newStatus });
+      showToast(`Successfully updated ${idsArray.length} tickets to ${newStatus}`);
+      setSelectedIds(new Set());
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update tickets', 'error');
+    }
+  };
+
+  const isUpdatingBulk = bulkStatusMutation.isPending;
+
+  const handleKanbanStatusChange = async (ticket: Ticket, newStatus: Ticket['status']) => {
+    if (ticket.status === newStatus || ticket.status === 'Closed') return;
+    try {
+      await api.updateTicket(ticket.id, { ...ticket, status: newStatus, notifyUser: true });
+      await queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      showToast(`Ticket moved to ${newStatus}`);
+    } catch (err: any) {
+      showToast(err.message || 'Unable to update ticket status', 'error');
+    } finally {
+      setDraggedTicketId(null);
+    }
+  };
+
+  const handleKanbanDrop = (newStatus: Ticket['status']) => {
+    if (!draggedTicketId) return;
+    const ticket = tickets.find((item) => item.id === draggedTicketId);
+    if (ticket) void handleKanbanStatusChange(ticket, newStatus);
+  };
+
+  const totalPages = Math.ceil(total / limit) || 1;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="space-y-6 pb-20 relative min-h-[calc(100vh-100px)]"
+    >
+      {/* Header */}
+      <div className="bg-surface pb-4">
+        <div className="flex flex-col items-center py-12">
+          <p className="text-[10px] sm:text-xs font-mono font-bold text-ink-muted uppercase tracking-[0.2em] mb-4">
+            Support Ops
+          </p>
+          <div className="flex w-full justify-between items-center px-6">
+            <span className="font-mono text-xs font-semibold text-ink uppercase tracking-wider">
+              {total} Active Requests
+            </span>
+            <span className="font-mono text-xs font-semibold text-ink uppercase tracking-wider">
+              {customers.length} Customers
+            </span>
+          </div>
+        </div>
+        <hr className="border-t-[1.5px] border-ink" />
+      </div>
+
+      <div className="px-4 sm:px-6">
+        {stats && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="bg-surface border-2 border-ink rounded-lg p-6 shadow-[4px_4px_0px_0px_rgba(23,32,43,1)]">
+              <h3 className="font-mono text-xs font-bold text-ink uppercase tracking-wider mb-6 text-center">
+                Ticket Status Distribution
+              </h3>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={stats.status}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={80}
+                      fill="#8884d8"
+                      label
+                    >
+                      {stats.status.map((_entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#fff',
+                        border: '2px solid #17202b',
+                        borderRadius: '4px',
+                        fontFamily: 'monospace',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                      }}
+                      itemStyle={{ color: '#17202b' }}
+                    />
+                    <Legend wrapperStyle={{ fontFamily: 'monospace', fontSize: '12px', fontWeight: 'bold' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-surface border-2 border-ink rounded-lg p-6 shadow-[4px_4px_0px_0px_rgba(23,32,43,1)]">
+              <h3 className="font-mono text-xs font-bold text-ink uppercase tracking-wider mb-6 text-center">
+                Priority Overview
+              </h3>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={stats.priority}>
+                    <XAxis
+                      dataKey="name"
+                      tick={{ fontFamily: 'monospace', fontSize: '12px', fill: '#17202b', fontWeight: 'bold' }}
+                      tickLine={false}
+                      axisLine={{ stroke: '#17202b', strokeWidth: 2 }}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tick={{ fontFamily: 'monospace', fontSize: '12px', fill: '#17202b', fontWeight: 'bold' }}
+                      tickLine={false}
+                      axisLine={{ stroke: '#17202b', strokeWidth: 2 }}
+                    />
+                    <Tooltip
+                      cursor={{ fill: '#f1f5f9' }}
+                      contentStyle={{
+                        backgroundColor: '#fff',
+                        border: '2px solid #17202b',
+                        borderRadius: '4px',
+                        fontFamily: 'monospace',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                      }}
+                      itemStyle={{ color: '#17202b' }}
+                    />
+                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                      {stats.priority.map((entry) => (
+                        <Cell
+                          key={`cell-${entry.name}`}
+                          fill={PRIORITY_COLORS[entry.name as keyof typeof PRIORITY_COLORS] || COLORS[0]}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-surface border-2 border-ink rounded-lg p-6 shadow-[4px_4px_0px_0px_rgba(23,32,43,1)]">
+              <h3 className="font-mono text-xs font-bold text-ink uppercase tracking-wider mb-6 text-center">
+                Avg Resolution (Hours)
+              </h3>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={stats.resolution}
+                    layout="vertical"
+                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <XAxis
+                      type="number"
+                      tick={{ fontFamily: 'monospace', fontSize: '12px', fill: '#17202b', fontWeight: 'bold' }}
+                      tickLine={false}
+                      axisLine={{ stroke: '#17202b', strokeWidth: 2 }}
+                    />
+                    <YAxis
+                      dataKey="name"
+                      type="category"
+                      tick={{ fontFamily: 'monospace', fontSize: '12px', fill: '#17202b', fontWeight: 'bold' }}
+                      tickLine={false}
+                      axisLine={{ stroke: '#17202b', strokeWidth: 2 }}
+                    />
+                    <Tooltip
+                      cursor={{ fill: '#f1f5f9' }}
+                      contentStyle={{
+                        backgroundColor: '#fff',
+                        border: '2px solid #17202b',
+                        borderRadius: '4px',
+                        fontFamily: 'monospace',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                      }}
+                      itemStyle={{ color: '#17202b' }}
+                      formatter={(value) => [`${value} hrs`, 'Average']}
+                    />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                      {stats.resolution.map((entry) => (
+                        <Cell
+                          key={`cell-${entry.name}`}
+                          fill={PRIORITY_COLORS[entry.name as keyof typeof PRIORITY_COLORS] || COLORS[0]}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="mb-6 flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-muted" />
+            <input
+              type="text"
+              aria-label="Search tickets by title or customer"
+              placeholder="Search by title or customer..."
+              value={search}
+              onChange={(e) => updateSearchParams({ search: e.target.value, page: '' })}
+              className="w-full pl-11 pr-4 py-2 bg-surface border-2 border-ink rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-navy transition-colors"
+            />
+          </div>
+          <select
+            aria-label="Filter tickets by status"
+            value={status}
+            onChange={(e) => updateSearchParams({ status: e.target.value, page: '' })}
+            className="px-4 py-2 bg-surface border-2 border-ink rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-navy cursor-pointer"
+          >
+            <option value="">All Statuses</option>
+            <option value="Open">Open</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Resolved">Resolved</option>
+            <option value="Closed">Closed</option>
+          </select>
+          <select
+            aria-label="Filter tickets by priority"
+            value={priority}
+            onChange={(e) => updateSearchParams({ priority: e.target.value, page: '' })}
+            className="px-4 py-2 bg-surface border-2 border-ink rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-navy cursor-pointer"
+          >
+            <option value="">All Priorities</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+          </select>
+          <button
+            onClick={handleExportCSV}
+            disabled={tickets.length === 0}
+            className="px-4 py-2 bg-surface border-2 border-ink rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-navy flex items-center justify-center gap-2 hover:bg-line/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-ink whitespace-nowrap"
+            title="Export current page to CSV"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">Export CSV</span>
+          </button>
+          <div
+            className="flex items-center gap-1 border-2 border-ink rounded-md p-1 bg-surface"
+            role="group"
+            aria-label="Dashboard view"
+          >
+            <button
+              type="button"
+              aria-pressed={viewMode === 'table'}
+              onClick={() => updateSearchParams({ view: '' })}
+              className={`px-3 py-1.5 text-xs font-mono font-bold uppercase rounded ${viewMode === 'table' ? 'bg-ink text-white' : 'text-ink'}`}
+            >
+              Table
+            </button>
+            <button
+              type="button"
+              aria-pressed={viewMode === 'kanban'}
+              onClick={() => updateSearchParams({ view: 'kanban' })}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-mono font-bold uppercase rounded ${viewMode === 'kanban' ? 'bg-ink text-white' : 'text-ink'}`}
+            >
+              <Columns3 className="w-3.5 h-3.5" /> Kanban
+            </button>
+          </div>
+        </div>
+
+        {error ? (
+          <div className="p-8 text-center bg-danger-bg border border-danger/20 rounded-md mb-6">
+            <p className="text-danger mb-4 font-mono text-sm">{error}</p>
+            <button
+              onClick={() => ticketsQuery.refetch()}
+              className="px-6 py-2 bg-ink text-white rounded-full text-xs font-mono font-bold uppercase tracking-wider hover:bg-ink/90 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        ) : loading ? (
+          <div className="animate-pulse space-y-4 mb-6">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="h-16 bg-surface border-2 border-line rounded-md"></div>
+            ))}
+          </div>
+        ) : tickets.length === 0 ? (
+          <div className="p-12 text-center border-2 border-ink border-dashed rounded-md mb-6">
+            {hasFilters ? (
+              <>
+                <p className="mb-4 font-mono text-sm text-ink-muted">No tickets match your filters.</p>
+                <button
+                  onClick={clearFilters}
+                  className="text-ink font-mono text-sm font-bold hover:underline uppercase tracking-wider"
+                >
+                  Reset filters
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="mb-4 font-mono text-sm text-ink-muted">No tickets exist yet.</p>
+                <Link
+                  to="/tickets/new"
+                  className="text-ink font-mono text-sm font-bold hover:underline uppercase tracking-wider"
+                >
+                  Create your first ticket
+                </Link>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <AnimatePresence>
+              {selectedIds.size > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  animate={{ opacity: 1, height: 'auto', marginBottom: 24 }}
+                  exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  className="bg-surface border-2 border-ink rounded-md p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-[4px_4px_0px_0px_rgba(23,32,43,1)] overflow-hidden"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-line/30 flex items-center justify-center">
+                      <CheckSquare className="w-4 h-4 text-ink" />
+                    </div>
+                    <span className="font-mono text-sm font-bold text-ink">
+                      {selectedIds.size} ticket{selectedIds.size > 1 ? 's' : ''} selected
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center gap-3">
+                    <span className="font-mono text-xs font-bold text-ink-muted uppercase tracking-wider">
+                      Update status:
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {['Open', 'In Progress', 'Resolved', 'Closed'].map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => handleBulkStatusUpdate(s as any)}
+                          disabled={isUpdatingBulk}
+                          className="px-3 py-1.5 bg-canvas border border-line rounded-md text-xs font-mono font-bold text-ink uppercase tracking-wider hover:bg-line/20 transition-colors disabled:opacity-50"
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {viewMode === 'kanban' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4" aria-label="Ticket kanban board">
+                {KANBAN_COLUMNS.map((column) => {
+                  const columnTickets = tickets.filter((ticket) => ticket.status === column);
+                  const isDropTarget = column !== 'Closed';
+                  return (
+                    <section
+                      key={column}
+                      aria-label={`${column} tickets`}
+                      onDragOver={(event) => {
+                        if (isDropTarget) event.preventDefault();
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        if (isDropTarget) handleKanbanDrop(column);
+                      }}
+                      className={`min-h-[280px] bg-surface border-2 border-ink rounded-md p-3 shadow-[4px_4px_0px_0px_rgba(23,32,43,1)] ${isDropTarget && draggedTicketId ? 'bg-line/20' : ''}`}
+                    >
+                      <div className="flex items-center justify-between border-b-2 border-ink pb-3 mb-3">
+                        <h2 className="font-mono text-xs font-bold uppercase tracking-wider">{column}</h2>
+                        <span className="font-mono text-xs font-bold text-ink-muted">{columnTickets.length}</span>
+                      </div>
+                      <div className="space-y-3">
+                        {columnTickets.map((ticket) => (
+                          <article
+                            key={ticket.id}
+                            draggable={ticket.status !== 'Closed'}
+                            onDragStart={() => setDraggedTicketId(ticket.id)}
+                            onDragEnd={() => setDraggedTicketId(null)}
+                            className={`bg-canvas border-2 border-ink border-l-4 ${PRIORITY_ROW_BORDERS[ticket.priority]} rounded-md p-3 ${ticket.status !== 'Closed' ? 'cursor-grab active:cursor-grabbing' : 'opacity-80'}`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/tickets/${ticket.id}`)}
+                              className="w-full text-left"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="font-mono text-[10px] text-ink-muted">
+                                  #{ticket.id.toString().slice(-4)}
+                                </span>
+                                <GripVertical className="w-4 h-4 text-ink-muted" aria-hidden="true" />
+                              </div>
+                              <h3 className="font-sans font-bold text-ink text-sm mt-2 line-clamp-2">{ticket.title}</h3>
+                              <p className="font-sans text-xs text-ink-muted mt-2">{ticket.customerName}</p>
+                              <div className="flex items-center justify-between gap-2 mt-3">
+                                <PriorityBadge priority={ticket.priority} />
+                                <span className="font-mono text-[10px] uppercase text-ink-muted">
+                                  {ticket.category}
+                                </span>
+                              </div>
+                            </button>
+                            {ticket.status !== 'Closed' && (
+                              <select
+                                aria-label={`Move ${ticket.title} to status`}
+                                value={ticket.status}
+                                onChange={(event) =>
+                                  void handleKanbanStatusChange(ticket, event.target.value as Ticket['status'])
+                                }
+                                className="mt-3 w-full bg-surface border border-ink rounded px-2 py-1 text-[10px] font-mono font-bold uppercase"
+                              >
+                                {KANBAN_COLUMNS.filter((statusOption) => statusOption !== 'Closed').map(
+                                  (statusOption) => (
+                                    <option key={statusOption}>{statusOption}</option>
+                                  ),
+                                )}
+                              </select>
+                            )}
+                          </article>
+                        ))}
+                        {columnTickets.length === 0 && (
+                          <p className="border border-dashed border-ink p-4 text-center font-mono text-[10px] uppercase text-ink-muted">
+                            Drop tickets here
+                          </p>
+                        )}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="bg-surface border-2 border-ink rounded-md overflow-x-auto shadow-[4px_4px_0px_0px_rgba(23,32,43,1)]">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b-2 border-ink bg-line/20">
+                      <th className="p-4 w-12 text-center">
+                        <input
+                          aria-label="Select all tickets"
+                          type="checkbox"
+                          checked={tickets.length > 0 && selectedIds.size === tickets.length}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedIds(new Set(tickets.map((t) => t.id)));
+                            } else {
+                              setSelectedIds(new Set());
+                            }
+                          }}
+                          className="w-4 h-4 cursor-pointer accent-navy rounded-sm border-2 border-ink"
+                        />
+                      </th>
+                      <th className="p-4 font-mono text-xs font-bold text-ink uppercase tracking-wider">ID</th>
+                      <th className="p-4 font-mono text-xs font-bold text-ink uppercase tracking-wider min-w-[200px]">
+                        Title
+                      </th>
+                      <th className="p-4 font-mono text-xs font-bold text-ink uppercase tracking-wider min-w-[150px]">
+                        Customer
+                      </th>
+                      <th className="p-4 font-mono text-xs font-bold text-ink uppercase tracking-wider">
+                        <button
+                          onClick={() => handleSort('priority')}
+                          className="flex items-center gap-1 hover:opacity-70 transition-opacity"
+                        >
+                          Priority <ArrowUpDown className="w-3 h-3" />
+                        </button>
+                      </th>
+                      <th className="p-4 font-mono text-xs font-bold text-ink uppercase tracking-wider">Status</th>
+                      <th className="p-4 font-mono text-xs font-bold text-ink uppercase tracking-wider">Assigned</th>
+                      <th className="p-4 font-mono text-xs font-bold text-ink uppercase tracking-wider">SLA / Due</th>
+                      <th className="p-4 font-mono text-xs font-bold text-ink uppercase tracking-wider">
+                        <button
+                          onClick={() => handleSort('date')}
+                          className="flex items-center gap-1 hover:opacity-70 transition-opacity"
+                        >
+                          Date <ArrowUpDown className="w-3 h-3" />
+                        </button>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <AnimatePresence>
+                      {tickets.length === 0 ? (
+                        <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border-b-2 border-line">
+                          <td colSpan={9} className="p-8 text-center">
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              <CheckSquare className="w-8 h-8 text-ink-muted" />
+                              <p className="font-sans font-bold text-ink">No tickets found.</p>
+                              <p className="text-sm text-ink-muted">Try adjusting your filters or search term.</p>
+                            </div>
+                          </td>
+                        </motion.tr>
+                      ) : (
+                        tickets.map((ticket, idx) => (
+                          <motion.tr
+                            key={ticket.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: Math.min(idx * 0.05, 0.3) }}
+                            className="border-b-2 border-line hover:bg-line/10 transition-colors cursor-pointer group"
+                            onClick={() => navigate(`/tickets/${ticket.id}`)}
+                          >
+                            <td
+                              className={`p-4 w-12 text-center border-l-4 ${PRIORITY_ROW_BORDERS[ticket.priority]}`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(ticket.id)}
+                                onChange={(e) => {
+                                  const newSet = new Set(selectedIds);
+                                  if (e.target.checked) newSet.add(ticket.id);
+                                  else newSet.delete(ticket.id);
+                                  setSelectedIds(newSet);
+                                }}
+                                className="w-4 h-4 cursor-pointer accent-navy rounded-sm border-2 border-ink"
+                              />
+                            </td>
+                            <td className="p-4 font-mono text-xs text-ink-muted group-hover:text-ink transition-colors">
+                              #{ticket.id.toString().slice(-4)}
+                            </td>
+                            <td className="p-4">
+                              <span className="font-sans font-bold text-ink text-sm line-clamp-1">{ticket.title}</span>
+                            </td>
+                            <td className="p-4 font-sans text-sm text-ink-muted">{ticket.customerName}</td>
+                            <td className="p-4">
+                              <PriorityBadge priority={ticket.priority} />
+                            </td>
+                            <td className="p-4">
+                              <StatusBadge status={ticket.status} />
+                            </td>
+                            <td className="p-4" onClick={(event) => event.stopPropagation()}>
+                              {currentUser?.role === 'admin' && (
+                                <select
+                                  aria-label={`Assign ${ticket.title}`}
+                                  value={(ticket as any).assignedTo?.id || (ticket as any).assignedTo || ''}
+                                  onChange={async (event) => {
+                                    await api.assignTicket(ticket.id, event.target.value || null);
+                                    await queryClient.invalidateQueries({ queryKey: ['tickets'] });
+                                  }}
+                                  className="max-w-[150px] border border-ink rounded px-2 py-1 text-xs font-mono"
+                                >
+                                  <option value="">Unassigned</option>
+                                  {adminUsers
+                                    .filter((user) => user.role === 'staff')
+                                    .map((user) => (
+                                      <option key={user.id} value={user.id}>
+                                        {user.displayName || user.username}
+                                      </option>
+                                    ))}
+                                </select>
+                              )}
+                            </td>
+                            <td className="p-4">
+                              {ticket.status !== 'Resolved' && ticket.status !== 'Closed' && ticket.dueDate ? (
+                                <div
+                                  className={`flex items-center gap-1.5 font-mono text-xs font-bold ${
+                                    getSlaStatus(ticket.dueDate) === 'overdue'
+                                      ? 'text-danger'
+                                      : getSlaStatus(ticket.dueDate) === 'warning'
+                                        ? 'text-warning'
+                                        : 'text-ink-muted'
+                                  }`}
+                                >
+                                  {getSlaStatus(ticket.dueDate) === 'overdue' ? (
+                                    <AlertCircle className="w-4 h-4" />
+                                  ) : (
+                                    <Clock className="w-4 h-4" />
+                                  )}
+                                  {formatDate(ticket.dueDate)}
+                                </div>
+                              ) : (
+                                <span className="font-mono text-xs text-ink-muted/50">—</span>
+                              )}
+                            </td>
+                            <td className="p-4 font-mono text-xs text-ink-muted whitespace-nowrap">
+                              {formatDate(ticket.createdAt)}
+                            </td>
+                          </motion.tr>
+                        ))
+                      )}
+                    </AnimatePresence>
+                  </tbody>
+                </table>
+
+                {/* Pagination Controls */}
+                <div className="p-4 border-t-2 border-ink flex items-center justify-between bg-surface">
+                  <span className="font-mono text-xs text-ink-muted font-bold uppercase">
+                    Page {page} of {totalPages}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={page === 1 || isUpdatingBulk}
+                      onClick={() => updateSearchParams({ page: String(Math.max(1, page - 1)) })}
+                      className="p-2 border-2 border-ink rounded-md text-ink disabled:opacity-50 disabled:cursor-not-allowed hover:bg-line/20 transition-colors"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      disabled={page === totalPages || isUpdatingBulk}
+                      onClick={() => updateSearchParams({ page: String(Math.min(totalPages, page + 1)) })}
+                      className="p-2 border-2 border-ink rounded-md text-ink disabled:opacity-50 disabled:cursor-not-allowed hover:bg-line/20 transition-colors"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <Link
+        to="/tickets/new"
+        className="fixed bottom-8 right-8 bg-ink text-white rounded-full pl-4 pr-6 py-4 flex items-center gap-3 shadow-[4px_4px_0px_0px_rgba(23,32,43,0.5)] hover:shadow-[6px_6px_0px_0px_rgba(23,32,43,0.7)] hover:-translate-y-1 transition-all z-50 group"
+      >
+        <div className="w-6 h-6 rounded-full bg-white text-ink flex items-center justify-center font-bold text-lg leading-none">
+          +
+        </div>
+        <span className="font-mono text-sm font-bold tracking-wider uppercase">New Ticket</span>
+      </Link>
+    </motion.div>
+  );
+}

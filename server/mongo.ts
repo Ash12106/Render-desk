@@ -1,0 +1,247 @@
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
+
+export async function connectMongoDB() {
+  mongoose.set('bufferCommands', false);
+  const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost/mock';
+
+  try {
+    await mongoose.connect(MONGODB_URI);
+    console.log('Successfully connected to MongoDB.');
+    await seedDatabase();
+  } catch (_error) {
+    console.warn('MongoDB not connected — some features may not work');
+  }
+}
+
+const customerSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    email: { type: String, required: true },
+    phone: { type: String, default: '' },
+    customerCode: { type: String, unique: true, sparse: true, index: true },
+  },
+  { timestamps: true },
+);
+
+customerSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret: any) => {
+    ret.id = ret._id.toString();
+    delete ret._id;
+    delete ret.__v;
+  },
+});
+
+export const Customer = mongoose.model('Customer', customerSchema);
+
+const ticketSchema = new mongoose.Schema(
+  {
+    customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true, index: true },
+    title: { type: String, required: true, index: true },
+    description: { type: String, required: true },
+    priority: { type: String, enum: ['Low', 'Medium', 'High'], required: true, index: true },
+    status: { type: String, enum: ['Open', 'In Progress', 'Resolved', 'Closed'], required: true, index: true },
+    category: {
+      type: String,
+      enum: ['Technical', 'Sales', 'Billing', 'Account', 'Other'],
+      default: 'Technical',
+      index: true,
+    },
+    dueDate: { type: Date },
+    deletedAt: { type: Date, default: null },
+    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+  },
+  { timestamps: true },
+);
+
+ticketSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret: any) => {
+    ret.id = ret._id.toString();
+    delete ret._id;
+    delete ret.__v;
+  },
+});
+
+export const Ticket = mongoose.model('Ticket', ticketSchema);
+
+const commentSchema = new mongoose.Schema(
+  {
+    ticketId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ticket', required: true },
+    content: { type: String, required: true },
+    author: { type: String, required: true },
+  },
+  { timestamps: true },
+);
+
+commentSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret: any) => {
+    ret.id = ret._id.toString();
+    delete ret._id;
+    delete ret.__v;
+  },
+});
+
+export const Comment = mongoose.model('Comment', commentSchema);
+
+const auditLogSchema = new mongoose.Schema(
+  {
+    ticketId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ticket', required: true },
+    action: { type: String, required: true },
+    details: { type: String, required: true },
+    author: { type: String, required: true },
+  },
+  { timestamps: true },
+);
+
+auditLogSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret: any) => {
+    ret.id = ret._id.toString();
+    delete ret._id;
+    delete ret.__v;
+  },
+});
+
+export const AuditLog = mongoose.model('AuditLog', auditLogSchema);
+
+const userSchema = new mongoose.Schema(
+  {
+    username: { type: String, required: true, unique: true },
+    passwordHash: { type: String, required: true },
+    role: { type: String, enum: ['admin', 'staff', 'customer'], default: 'staff', index: true },
+    customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null, index: true },
+    googleId: { type: String, unique: true, sparse: true, index: true },
+    displayName: { type: String, default: '' },
+    email: { type: String, default: '' },
+    phone: { type: String, default: '' },
+    team: { type: String, default: '' },
+    branch: { type: String, default: '' },
+  },
+  { timestamps: true },
+);
+
+userSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret: any) => {
+    ret.id = ret._id.toString();
+    delete ret.passwordHash;
+    delete ret._id;
+    delete ret.__v;
+  },
+});
+
+export const User = mongoose.model('User', userSchema);
+
+const notificationSchema = new mongoose.Schema(
+  {
+    customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true, index: true },
+    ticketId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ticket', required: true, index: true },
+    type: { type: String, enum: ['STATUS_CHANGE'], required: true },
+    message: { type: String, required: true },
+    readAt: { type: Date, default: null },
+  },
+  { timestamps: true },
+);
+
+notificationSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret: any) => {
+    ret.id = ret._id.toString();
+    delete ret._id;
+    delete ret.__v;
+  },
+});
+
+export const Notification = mongoose.model('Notification', notificationSchema);
+
+const migrationSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },
+  appliedAt: { type: Date, default: Date.now },
+});
+export const Migration = mongoose.model('Migration', migrationSchema);
+
+async function seedDatabase() {
+  await runMigrations();
+
+  const count = await Customer.countDocuments();
+  if (count === 0) {
+    const customers = [
+      { name: 'Maya Chen', email: 'maya.chen@example.com' },
+      { name: 'Jordan Ellis', email: 'jordan.ellis@example.com' },
+      { name: 'Priya Shah', email: 'priya.shah@example.com' },
+      { name: 'Rowan Brooks', email: 'rowan.brooks@example.com' },
+    ];
+    await Customer.insertMany(customers);
+    console.log('Seeded customers.');
+  }
+}
+
+async function runMigrations() {
+  console.log('[Migrations] Checking migrations...');
+
+  const migrations = [
+    {
+      name: '001_initial_admin_user',
+      up: async () => {
+        const adminExists = await User.findOne({ username: 'admin' });
+        if (!adminExists) {
+          const passwordHash = await bcrypt.hash('password123', 10);
+          await User.create({
+            username: 'admin',
+            passwordHash,
+            role: 'admin',
+            displayName: 'Support Administrator',
+            team: 'Operations',
+            branch: 'Head Office',
+          });
+          console.log('[Migrations] Created default admin user (admin / password123)');
+        }
+      },
+    },
+    {
+      name: '002_backfill_staff_roles_and_ticket_categories',
+      up: async () => {
+        await User.updateMany({ role: { $exists: false } }, { $set: { role: 'staff' } });
+        await User.updateOne(
+          { username: 'admin' },
+          { $set: { role: 'admin', displayName: 'Support Administrator', team: 'Operations', branch: 'Head Office' } },
+        );
+        await Ticket.updateMany({ category: { $exists: false } }, { $set: { category: 'Technical' } });
+      },
+    },
+    {
+      name: '003_promote_admin_account',
+      up: async () => {
+        await User.updateOne(
+          { username: 'admin' },
+          { $set: { role: 'admin', displayName: 'Support Administrator', team: 'Operations', branch: 'Head Office' } },
+        );
+      },
+    },
+    {
+      name: '004_backfill_customer_codes',
+      up: async () => {
+        const customers = await Customer.find({ customerCode: { $exists: false } });
+        for (const customer of customers) {
+          customer.customerCode = `CUST-${customer._id.toString().slice(-6).toUpperCase()}`;
+          await customer.save();
+        }
+      },
+    },
+  ];
+
+  for (const migration of migrations) {
+    const applied = await Migration.findOne({ name: migration.name });
+    if (!applied) {
+      console.log(`[Migrations] Applying ${migration.name}...`);
+      await migration.up();
+      await Migration.create({ name: migration.name });
+      console.log(`[Migrations] Applied ${migration.name}`);
+    }
+  }
+
+  console.log('[Migrations] Up to date.');
+}
