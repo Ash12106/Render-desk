@@ -18,11 +18,12 @@ services:
         condition: service_started
     restart: 'no'
     entrypoint: ['/bin/sh', '-c']
-    command: >-
-      until mongosh --host mongo:27017 --quiet --eval "db.adminCommand('ping')";
-      do sleep 2; done;
-      mongosh --host mongo:27017 --quiet --eval
-      "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) }"
+    command:
+      - >-
+        until mongosh --host mongo:27017 --quiet --eval "db.adminCommand('ping')";
+        do sleep 2; done;
+        mongosh --host mongo:27017 --quiet --eval
+        "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) }"
 
   app:
     build:
