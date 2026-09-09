@@ -8,6 +8,7 @@ Support Ops Desk is an internal service-ticket management application used by cu
 **Tried to add google Auth but has issues with my console use these for testing:** `Username:admin,password:admin@2026`,`Staff:Aashish6782,password:Asdf0987`,`Customer:Uthi27,password:Asdf1234`<br>
 **You can add new Staff from the admin login and then use the same credentionals to log on to staff Account**
 **You can add new Customers from create account option on signin page** 
+**While Local developnment after adding db connection you can run `npm run seed` to genrate tickets, customers, comments, and audit records.**
 **Demo health check:** `https://render-desk.onrender.com/api/health/db`
 
 ## 1.README
