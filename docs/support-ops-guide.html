@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Support Ops Desk | Operator Guide</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 17mm 16mm 19mm;
+      }
+      :root {
+        --paper: #f5f4ed;
+        --ink: #1b365d;
+        --text: #26313b;
+        --muted: #66727d;
+        --line: #c7c4b8;
+        --wash: #e8e6dc;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--text);
+        font:
+          10.5pt/1.55 Charter,
+          Georgia,
+          serif;
+      }
+      main {
+        max-width: 820px;
+        margin: 0 auto;
+      }
+      h1,
+      h2,
+      h3 {
+        color: var(--ink);
+        line-height: 1.12;
+        margin: 0 0 10px;
+      }
+      h1 {
+        font-size: 32pt;
+      }
+      h2 {
+        font-size: 19pt;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 7px;
+        margin-top: 26px;
+      }
+      h3 {
+        font-size: 13pt;
+        margin-top: 17px;
+      }
+      p {
+        margin: 7px 0 11px;
+      }
+      code,
+      pre {
+        font-family: 'SFMono-Regular', Consolas, monospace;
+      }
+      code {
+        color: var(--ink);
+      }
+      pre {
+        background: #202d3b;
+        color: #f4f1e8;
+        padding: 11px 13px;
+        border-radius: 2px;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+        font-size: 8.4pt;
+        line-height: 1.45;
+      }
+      ul,
+      ol {
+        margin-top: 5px;
+        padding-left: 23px;
+      }
+      li {
+        margin: 4px 0;
+      }
+      .cover {
+        min-height: 246mm;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 17mm 4mm 8mm;
+        page-break-after: always;
+      }
+      .eyebrow {
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        font:
+          8pt/1.4 'SFMono-Regular',
+          Consolas,
+          monospace;
+      }
+      .rule {
+        width: 76px;
+        border-top: 4px solid var(--ink);
+        margin: 27px 0;
+      }
+      .dek {
+        max-width: 560px;
+        color: var(--muted);
+        font-size: 14pt;
+      }
+      .meta {
+        border-top: 1px solid var(--line);
+        padding-top: 10px;
+        color: var(--muted);
+        font-size: 9pt;
+      }
+      .toc {
+        page-break-after: always;
+      }
+      .toc ol {
+        columns: 2;
+        column-gap: 36px;
+      }
+      .callout {
+        border-left: 4px solid var(--ink);
+        background: var(--wash);
+        padding: 11px 14px;
+        margin: 14px 0;
+      }
+      .workflow {
+        border-top: 1px solid var(--line);
+        padding: 10px 0 5px;
+        break-inside: avoid;
+      }
+      .workflow strong {
+        color: var(--ink);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+      }
+      .card {
+        border: 1px solid var(--line);
+        padding: 11px;
+        break-inside: avoid;
+      }
+      .card strong {
+        display: block;
+        color: var(--ink);
+        margin-bottom: 3px;
+      }
+      figure {
+        margin: 17px 0 21px;
+        break-inside: avoid;
+      }
+      figure img {
+        display: block;
+        width: 100%;
+        max-height: 142mm;
+        object-fit: contain;
+        border: 1px solid var(--line);
+        background: white;
+      }
+      figcaption {
+        color: var(--muted);
+        font-size: 8.5pt;
+        margin-top: 6px;
+      }
+      .page-break {
+        page-break-before: always;
+      }
+      .footer {
+        border-top: 1px solid var(--line);
+        margin-top: 28px;
+        padding-top: 8px;
+        color: var(--muted);
+        font-size: 8.5pt;
+      }
+      @media screen {
+        body {
+          padding: 28px;
+        }
+        .cover {
+          min-height: 760px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="cover">
+        <div>
+          <div class="eyebrow">Operations Guide / Handoff Edition</div>
+          <div class="rule"></div>
+          <h1>Support Ops Desk</h1>
+          <p class="dek">
+            Runbook for setup, role-based workflows, testing, Docker operation, troubleshooting, and handoff.
+          </p>
+        </div>
+        <div>
+          <div class="callout">
+            <strong>Audience.</strong> Use this guide as the practical operating reference for an administrator, staff
+            member, customer, developer, or reviewer evaluating the submission.
+          </div>
+          <div class="meta">
+            Prepared from the repository's current support guide and verified local application behavior.
+          </div>
+        </div>
+      </section>
+
+      <section class="toc">
+        <div class="eyebrow">Contents</div>
+        <h2>Operator map</h2>
+        <ol>
+          <li>Application roles</li>
+          <li>Requirements and first setup</li>
+          <li>Docker operation</li>
+          <li>LAN and multi-device use</li>
+          <li>Google sign-in</li>
+          <li>Role workflows</li>
+          <li>Ticket conversations</li>
+          <li>Persistence and rollback</li>
+          <li>Testing and release checks</li>
+          <li>Screenshot evidence</li>
+          <li>Troubleshooting</li>
+          <li>Security handoff</li>
+        </ol>
+      </section>
+
+      <section>
+        <div class="eyebrow">01 / Roles</div>
+        <h2>What the application does</h2>
+        <div class="grid">
+          <div class="card">
+            <strong>Administrator</strong>Manages staff and administrator accounts, teams, branches, availability,
+            assignments, deleted-ticket recovery, and operational data.
+          </div>
+          <div class="card">
+            <strong>Staff</strong>Works assigned tickets, updates lifecycle and activity state, posts comments, reviews
+            customer context, and manages availability.
+          </div>
+          <div class="card">
+            <strong>Customer</strong>Creates tickets, follows status, reads the activity log, replies while tickets are
+            open, and manages profile information.
+          </div>
+          <div class="card">
+            <strong>Persistence</strong>Tickets and profiles live in MongoDB. Browser storage only keeps the current
+            development login session.
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="eyebrow">02 / Setup</div>
+        <h2>Requirements and first setup</h2>
+        <ul>
+          <li>Node.js 22 or newer. The Docker image uses Node.js 24.</li>
+          <li>npm and MongoDB 7 or newer.</li>
+          <li>Chrome, Edge, Safari, or Firefox.</li>
+          <li>Docker Desktop with Compose v2 for the container setup.</li>
+        </ul>
+        <pre>
+git clone &lt;repository-url&gt;
+cd Internship-main
+npm install
+cp .env.example .env</pre>
+        <p>
+          Set <code>MONGO_URI</code>, <code>PORT</code>, <code>CORS_ORIGIN</code>, and <code>ADMIN_PASSWORD</code> in
+          <code>.env</code>. Google variables are optional. Never commit <code>.env</code>.
+        </p>
+        <pre>npm run dev</pre>
+        <p>
+          Open staff/admin at <code>http://localhost:3000/login</code> and customers at
+          <code>http://localhost:3000/customer/login</code>.
+        </p>
+        <div class="callout">
+          <strong>Default administrator.</strong> Startup migrations create <code>admin</code> with the value of
+          <code>ADMIN_PASSWORD</code>, defaulting to <code>admin@2026</code>. Change it before shared or production use.
+        </div>
+      </section>
+
+      <section>
+        <div class="eyebrow">03 / Containers</div>
+        <h2>Docker operation</h2>
+        <pre>
+docker compose up --build -d
+docker compose ps
+curl http://localhost:3000/api/health/db</pre>
+        <p>
+          The app container runs the compiled Node.js/Express server and frontend. MongoDB runs as a single-node replica
+          set because account creation, ticket creation, deletion, and restore use transactions. The one-shot
+          initializer configures the replica set.
+        </p>
+        <ul>
+          <li>Keep data: <code>docker compose down</code>.</li>
+          <li>Reset all data: <code>docker compose down -v</code>.</li>
+          <li>Change the host port: <code>PORT=3001 docker compose up --build -d</code>.</li>
+          <li>Rebuild after changing <code>VITE_GOOGLE_CLIENT_ID</code>.</li>
+        </ul>
+        <div class="callout">
+          <strong>Healthy state.</strong> <code>app</code> is running, <code>mongo</code> is healthy, and
+          <code>/api/health/db</code> returns HTTP 200 with a connected database response.
+        </div>
+      </section>
+
+      <section>
+        <div class="eyebrow">04 / Access</div>
+        <h2>Using multiple devices</h2>
+        <p>
+          The server binds to <code>0.0.0.0</code>, so devices on the same LAN can use the host computer's IP address:
+        </p>
+        <pre>
+ipconfig getifaddr en0
+http://192.168.1.25:3000/login
+http://192.168.1.25:3000/customer/login</pre>
+        <ol>
+          <li>Use separate administrator, staff, and customer accounts.</li>
+          <li>Create staff accounts from the administrator's Manage staff screen.</li>
+          <li>Customers can register from the customer login page.</li>
+          <li>Test <code>http://&lt;host-ip&gt;:3000/api/health/db</code> from another device.</li>
+        </ol>
+        <p>
+          If access fails, check the network, host process, macOS firewall, and port availability. For a LAN demo
+          without hot reload, use <code>DISABLE_HMR=true npm run dev</code>.
+        </p>
+      </section>
+
+      <section>
+        <div class="eyebrow">05 / Optional auth</div>
+        <h2>Google sign-in</h2>
+        <ol>
+          <li>Configure the OAuth consent screen in Google Cloud Console.</li>
+          <li>Create a Web application OAuth client.</li>
+          <li>Add each local or deployed origin to Authorized JavaScript origins.</li>
+          <li>Set the same client ID in <code>GOOGLE_CLIENT_ID</code> and <code>VITE_GOOGLE_CLIENT_ID</code>.</li>
+          <li>Restart or rebuild after changing environment values.</li>
+        </ol>
+        <p>
+          Customer Google sign-in creates or links a customer account. Staff Google sign-in works only for a
+          pre-provisioned staff or administrator account with the same email.
+        </p>
+      </section>
+
+      <section class="page-break">
+        <div class="eyebrow">06 / Workflows</div>
+        <h2>Role-based operating workflows</h2>
+        <div class="workflow">
+          <strong>Administrator.</strong> Sign in at <code>/login</code>; create staff accounts; edit role, team,
+          branch, and profile details; review workload; assign tickets to available staff; inspect or restore deleted
+          tickets.
+        </div>
+        <div class="workflow">
+          <strong>Staff.</strong> Sign in with an administrator-created account; review assigned tickets; search and
+          filter; create, inspect, edit, and comment; move tickets through
+          <code>Open -> In Progress -> Resolved -> Closed</code>; update activity state and availability.
+        </div>
+        <div class="workflow">
+          <strong>Customer.</strong> Register or sign in at <code>/customer/login</code>; raise a ticket; open it from
+          My requests; read the shared Activity Log; reply while open; continue reading after closure.
+        </div>
+        <h3>Conversation behavior</h3>
+        <ul>
+          <li>Customers and staff share the same MongoDB comment records.</li>
+          <li>Staff comments appear in the customer activity log.</li>
+          <li>Customer replies appear in the staff activity feed.</li>
+          <li>Closed tickets are read-only; the API rejects new comments with HTTP 409.</li>
+          <li>Deleted tickets leave active lists and move to <code>deleted_tickets</code>.</li>
+        </ul>
+      </section>
+
+      <section>
+        <div class="eyebrow">07 / Evidence</div>
+        <h2>Live application evidence</h2>
+        <figure>
+          <img src="../docs-assets/staff-login.png" alt="Staff login screen" />
+          <figcaption>Figure 1. Staff/admin login entry point captured from the running local app.</figcaption>
+        </figure>
+        <figure>
+          <img src="../docs-assets/customer-login.png" alt="Customer portal login screen" />
+          <figcaption>
+            Figure 2. Customer sign-in and account creation entry point captured from the running local app.
+          </figcaption>
+        </figure>
+        <figure>
+          <img src="../docs-assets/api-docs.png" alt="Swagger API documentation screen" />
+          <figcaption>Figure 3. Swagger documentation captured from <code>/api-docs</code>.</figcaption>
+        </figure>
+      </section>
+
+      <section>
+        <div class="eyebrow">08 / Data</div>
+        <h2>Persistence and deleted-ticket rollback</h2>
+        <p>
+          Important collections are <code>users</code>, <code>customers</code>, <code>tickets</code>,
+          <code>deleted_tickets</code>, <code>comments</code>, <code>auditlogs</code>, <code>notifications</code>, and
+          <code>migrations</code>.
+        </p>
+        <p>
+          Deleting a ticket archives the complete document with <code>deletedAt</code> and <code>deletedBy</code>,
+          removes it from active tickets, and retains comments and audit history. Administrators can list and restore
+          archived tickets:
+        </p>
+        <pre>
+curl -H "Authorization: Bearer &lt;admin-user-id&gt;" \
+  http://localhost:3000/api/admin/deleted-tickets
+
+curl -X POST -H "Authorization: Bearer &lt;admin-user-id&gt;" \
+  http://localhost:3000/api/admin/deleted-tickets/&lt;ticket-id&gt;/restore</pre>
+      </section>
+
+      <section>
+        <div class="eyebrow">09 / Verification</div>
+        <h2>Testing and release checks</h2>
+        <pre>
+npm run lint
+npm run lint:eslint
+npm run format:check
+npm test
+npm run build
+
+docker compose up --build -d
+docker compose ps
+curl http://localhost:3000/api/health/db</pre>
+        <p>
+          The verified local pass completed TypeScript, ESLint, Prettier, 31 tests, production build, Docker rebuild,
+          MongoDB health, route checks, and 100 repeated health requests. Protected API routes correctly rejected
+          requests without a bearer token.
+        </p>
+        <p>
+          Vite may report a main JavaScript bundle over 500 kB. This is a performance warning rather than a failed
+          release.
+        </p>
+        <h3>Manual smoke test</h3>
+        <ol>
+          <li>Sign in as admin.</li>
+          <li>Create a staff account.</li>
+          <li>Register a customer in another browser.</li>
+          <li>Create a customer ticket.</li>
+          <li>Confirm it appears for staff.</li>
+          <li>Exchange staff and customer comments.</li>
+          <li>Close the ticket and confirm replies are disabled.</li>
+          <li>Delete and restore it as admin.</li>
+          <li>Confirm ticket and history return.</li>
+        </ol>
+      </section>
+
+      <section>
+        <div class="eyebrow">10 / Troubleshooting</div>
+        <h2>Common recovery paths</h2>
+        <h3>White screen or stale behavior</h3>
+        <p>
+          Stop old Node processes, start one server, and hard refresh with <code>Cmd + Shift + R</code>. A server
+          started before a code change will not contain newly added API routes.
+        </p>
+        <h3>Port already in use</h3>
+        <pre>
+lsof -nP -iTCP:3000 -sTCP:LISTEN
+PORT=3001 npm run dev</pre>
+        <h3>Database unavailable</h3>
+        <p>
+          Check <code>/api/health/db</code>, verify <code>MONGO_URI</code>, review Atlas IP allowlisting, and confirm
+          database permissions.
+        </p>
+        <h3>Authentication appears stuck</h3>
+        <p>
+          Sign out, clear site local storage, or use a private window. Each browser/device stores its own development
+          session.
+        </p>
+      </section>
+
+      <section>
+        <div class="eyebrow">11 / Handoff</div>
+        <h2>Security handoff</h2>
+        <p>
+          The current authentication model is intentionally small for development: the browser stores a user ID and
+          sends it as a bearer token. Before public production use, add secure server-managed sessions or signed
+          short-lived tokens, HTTPS, secret rotation, stronger password policy, audit-safe logging, and a restricted
+          CORS origin.
+        </p>
+        <p>
+          Keep screenshots free of passwords, tokens, personal data, private hostnames, and real customer information.
+        </p>
+        <div class="footer">Support Ops Desk / Operator Guide / Prepared for HTML-to-PDF conversion</div>
+      </section>
+    </main>
+  </body>
+</html>
