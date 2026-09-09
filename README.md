@@ -207,30 +207,18 @@ origins** in Google Cloud Console. `GOOGLE_CLIENT_ID` and
 `VITE_GOOGLE_CLIENT_ID` must contain the same client ID. The production server
 allows Google Identity Services through its Content Security Policy.
 
-### Final submission edit checklist
-
-Before sharing this README with the interviewer, update only these marked values:
-
-1. Replace `[team or squad]`, `[#support-ops-channel]`, `[@maintainer]`, and `[pager, ticket queue, or service owner]` in Ownership and support.
-2. Do not replace placeholder passwords with real secrets; keep credentials in Render environment settings.
-
 ### Ownership and support
 
-The repository does not currently define formal ownership or an on-call rotation. Complete these values for internal handoff:
-
-- **Engineering team:** `[team or squad]`
-- **Support channel:** `[#support-ops-channel]`
-- **Primary maintainer:** `[@maintainer]`
-- **Incident escalation:** `[pager, ticket queue, or service owner]`
+The repository does not currently define formal ownership or an on-call rotation.
 - **Production URL:** `https://render-desk.onrender.com`
 
 ---
 
 ## 2. Architecture Decision Record: MongoDB Replica Set
 
-- **Status:** Accepted for the current application
-- **Date:** 2026-09-09
-- **Decision owner:** Support Ops Desk engineering owner
+- **Status:** Accepted for the current web application
+- **Date:** 09/09/2026
+- **Decision owner:** Aashish.A.Shirahatti
 
 ### Context
 
@@ -238,7 +226,7 @@ The application creates related records across users, customers, tickets, commen
 
 ### Decision
 
-Use MongoDB 7 configured as a single-node replica set for local and Compose-based deployments. Mongoose provides schema and connection management, while the application uses transactions for multi-document operations. Docker Compose starts MongoDB with `--replSet rs0` and runs a one-shot initializer before the app container starts.
+Used MongoDB 7 configured as a single-node replica set for local and Compose-based deployments. Mongoose provides schema and connection management, while the application uses transactions for multi-document operations. Docker Compose starts MongoDB with `--replSet rs0` and runs a one-shot initializer before the app container starts.
 
 ### Rationale
 
@@ -342,7 +330,7 @@ curl -X POST http://localhost:3000/api/customer-auth/register \
 
 ## 4. Developer Onboarding and Troubleshooting Guide
 
-### First-day checklist
+### checklist
 
 1. Install Node.js 22+ and Docker Desktop with Compose v2.
 2. Clone the repository and copy `.env.example` to `.env`.
@@ -412,7 +400,7 @@ The repository does not currently enforce a branch or commit policy in CI. The f
 - Commits: Conventional Commits format: `<type>: <imperative summary>`.
 - Allowed common types: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `build`, `ci`.
 - Examples: `feat: add customer ticket notifications`, `fix: handle replica set startup`, `docs: add registration contract`.
-- Pull requests should include scope, validation commands, configuration changes, migration impact, and rollback notes.
+- Pull requests should include scope, validation commands, configuration changes, migration impact,Google Auth and rollback notes.
 
 ### Handy test commands
 
