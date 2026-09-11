@@ -62,6 +62,83 @@ with `PORT=3001 docker compose up --build -d app` and use
 `http://localhost:3001/security`. Krawl remains private to the Compose network on
 container port `5000`; it is never published as a separate host service.
 
+### Krawl honeypot
+
+Krawl is a deception and threat-monitoring service integrated into the Support Desk.
+It presents believable decoy pages and traps to scanners and suspicious clients,
+records request metadata in its own database, and exposes aggregated security data
+through its authenticated dashboard API. The Support Desk does not invent threat
+records or replace unavailable values with fake data.
+
+#### Krawl features
+
+- **Deception traps:** configured paths such as `/admin`, `/wp-admin`,
+  `/phpmyadmin`, `/.env`, `/.aws/credentials`, and `/config.php` respond as decoy
+  resources and can be classified as honeypot activity.
+- **Suspicious request detection:** Krawl evaluates request paths, methods,
+  payload patterns, and scanner-like user agents.
+- **Threat records:** access logs, attack classifications, honeypot hits, IP
+  reputation, captured credential attempts, top paths, and top user agents are
+  stored in Krawl's database when the Krawl persistence configuration is enabled.
+- **Tarpit behavior:** configurable response delays and noise slow automated
+  probing without affecting the Support Desk application.
+- **IP analysis:** Krawl tracks suspicious IP activity and reputation categories.
+- **Admin monitoring:** the Support Desk security page displays health, metrics,
+  recent attacks, and IP data through the app's admin-only proxy.
+
+#### How to use Krawl locally
+
+1. Copy `.env.example` to `.env` and set `ADMIN_PASSWORD` and
+   `KRAWL_DASHBOARD_PASSWORD` to local secrets.
+2. Start the stack:
+
+   ```bash
+   docker compose up --build -d
+   ```
+
+3. Confirm Krawl is healthy:
+
+   ```bash
+   docker compose ps
+   docker compose logs --tail=50 krawl
+   ```
+
+4. Open `http://localhost:3000/`, sign in with an administrator account, and
+   select **Security**, or open `http://localhost:3000/security` directly.
+5. To generate a harmless local probe for testing, request one configured trap:
+
+   ```bash
+  docker compose exec -T krawl python -c "import urllib.request; request=urllib.request.Request('http://127.0.0.1:5000/admin', headers={'User-Agent':'security-test-client'}); print(urllib.request.urlopen(request).status)"
+   ```
+
+   The Support Desk does not expose Krawl directly; the Krawl container is
+   reachable only inside the Compose network at `http://krawl:5000`.
+
+#### How to use Krawl on Render
+
+Deploy Krawl as a separate service and set the Support Desk Render variables:
+
+```text
+KRAWL_API_URL=https://your-krawl-service.onrender.com
+KRAWL_DASHBOARD_PASSWORD=<the same Krawl password>
+KRAWL_DASHBOARD_SECRET_PATH=/security-dashboard-secret
+```
+
+Check the Krawl service before redeploying Support Desk:
+
+```bash
+curl https://your-krawl-service.onrender.com/security-dashboard-secret/healthz
+```
+
+The expected response is `{"status":"ok"}`. Then open
+`https://render-desk.onrender.com/security` as an administrator. Staff and
+customer accounts receive `403` from the Krawl proxy routes.
+
+Krawl's standalone SQLite data requires persistent storage for durable history.
+Free hosting services may restart or sleep services and discard local SQLite data;
+use persistent storage or an external database when retaining threat history is
+important.
+
 ### quick test
 
 ```bash
@@ -184,9 +261,8 @@ npm audit
 
 The verified local suite contains 11 passing test files and 55 passing tests, with
 24 intentionally skipped tests. `npm run lint`, `npm run lint:eslint`, and
-`npm run build` pass. Prettier currently reports style drift in existing Krawl
-files; this does not affect compilation or runtime behavior. The build may emit a
-non-blocking Vite warning when the main browser bundle exceeds 500 kB.
+`npm run format:check` pass. The build may emit a non-blocking Vite warning when
+the main browser bundle exceeds 500 kB.
 
 ### Verification report
 
