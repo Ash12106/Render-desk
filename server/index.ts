@@ -256,6 +256,8 @@ const authMiddleware = async (req: express.Request, res: express.Response, next:
 
 export async function buildApp() {
   const app = express();
+  // Render sits in front of the app and supplies one X-Forwarded-For proxy hop.
+  app.set('trust proxy', 1);
 
   const configuredCorsOrigins = process.env.CORS_ORIGIN?.split(',')
     .map((origin) => origin.trim())
