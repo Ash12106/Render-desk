@@ -23,6 +23,7 @@ import { StaffDirectory } from './routes/StaffDirectory';
 import { StaffManagement } from './routes/StaffManagement';
 import { KrawlSecurityAdmin } from './components/admin/KrawlSecurityAdmin';
 import { getStoredAuthUser } from './lib/auth';
+import { ForgotPassword, ResetPassword } from './routes/PasswordReset';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const authUser = getStoredAuthUser();
@@ -53,6 +54,8 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/customer/login" element={<CustomerLogin />} />
           <Route
             path="/"

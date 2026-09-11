@@ -12,6 +12,7 @@ import {
   AuditLog,
   Notification,
   DeletedTicket,
+  PasswordResetToken,
 } from './mongo.js';
 import { z } from 'zod';
 import mongoose from 'mongoose';
@@ -24,10 +25,34 @@ import swaggerUi from 'swagger-ui-express';
 import { OAuth2Client } from 'google-auth-library';
 import { queueCustomerStatusNotification, simulateStatusChangeNotification } from './notifications.js';
 import { assertValidStatusTransition } from './status.js';
+import crypto from 'node:crypto';
+import nodemailer from 'nodemailer';
 
 const PORT = Number(process.env.PORT) || 3000;
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
 const googleClient = new OAuth2Client(googleClientId);
+const passwordResetEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+const appBaseUrl = (process.env.APP_BASE_URL || process.env.CORS_ORIGIN || `http://localhost:${PORT}`).replace(
+  /\/$/,
+  '',
+);
+
+function createMailer() {
+  const host = process.env.SMTP_HOST;
+  const port = Number(process.env.SMTP_PORT || 587);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASSWORD;
+  if (!host || !user || !pass || !passwordResetEmail) {
+    throw new Error('Password reset email is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD, and SMTP_FROM.');
+  }
+  return nodemailer.createTransport({ host, port, secure: process.env.SMTP_SECURE === 'true', auth: { user, pass } });
+}
+
+const passwordResetRequestSchema = z.object({ email: z.string().trim().email() });
+const passwordResetSchema = z.object({
+  token: z.string().min(32),
+  password: z.string().min(8, 'Password must be at least 8 characters.'),
+});
 
 const ticketSchema = z.object({
   customerId: z.string().min(1, 'Choose a customer.'),
@@ -263,6 +288,74 @@ export async function buildApp() {
 
   app.get('/api/auth/config', (_req, res) => {
     res.json({ googleClientId: googleClientId || null });
+  });
+
+  app.post('/api/auth/forgot-password', mutationLimiter, async (req, res) => {
+    try {
+      const { email } = passwordResetRequestSchema.parse(req.body);
+      const normalizedEmail = email.toLowerCase();
+      const customer = await Customer.findOne({ email: normalizedEmail });
+      const user =
+        (await User.findOne({ email: normalizedEmail, role: { $in: ['admin', 'staff'] } })) ||
+        (customer ? await User.findOne({ customerId: customer._id, role: 'customer' }) : null);
+
+      if (!user) {
+        return res.status(202).json({
+          success: true,
+          message: 'If an account exists for that email, a reset link has been sent.',
+        });
+      }
+
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      await PasswordResetToken.deleteMany({ userId: user._id });
+      await PasswordResetToken.create({
+        userId: user._id,
+        tokenHash,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      });
+
+      const resetUrl = `${appBaseUrl}/reset-password?token=${rawToken}`;
+      try {
+        await createMailer().sendMail({
+          from: passwordResetEmail,
+          to: normalizedEmail,
+          subject: 'Reset your Support Desk password',
+          text: `Reset your Support Desk password using this link (valid for 1 hour): ${resetUrl}`,
+          html: `<p>Reset your Support Desk password using the link below. It expires in 1 hour.</p><p><a href="${resetUrl}">Reset password</a></p>`,
+        });
+      } catch (mailError) {
+        await PasswordResetToken.deleteOne({ tokenHash });
+        throw mailError;
+      }
+
+      res.status(202).json({
+        success: true,
+        message: 'If an account exists for that email, a reset link has been sent.',
+      });
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
+  app.post('/api/auth/reset-password', mutationLimiter, async (req, res) => {
+    try {
+      const { token, password } = passwordResetSchema.parse(req.body);
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const resetToken = await PasswordResetToken.findOne({ tokenHash, expiresAt: { $gt: new Date() } });
+      if (!resetToken) {
+        return res.status(400).json({ success: false, message: 'This reset link is invalid or expired.', data: null });
+      }
+
+      const passwordHash = await bcrypt.hash(password, 12);
+      const user = await User.findByIdAndUpdate(resetToken.userId, { passwordHash }, { new: true });
+      await PasswordResetToken.deleteOne({ _id: resetToken._id });
+      if (!user)
+        return res.status(400).json({ success: false, message: 'This reset link is invalid or expired.', data: null });
+      res.json({ success: true, message: 'Password reset successfully.' });
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
   });
 
   app.post('/api/customer-auth/register', mutationLimiter, async (req, res) => {

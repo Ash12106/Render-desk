@@ -170,6 +170,29 @@ The seed command creates customer profiles and ticket data; it does not create
 customer login accounts. Customer accounts must be registered through the
 customer login screen or API.
 
+### Password reset
+
+Staff and customers can select **Forgot password?**, enter their registered email
+address, and receive a one-hour reset link. Tokens are stored hashed in MongoDB,
+expire automatically, and are deleted after a successful reset. The response does
+not reveal whether an email exists.
+
+Configure SMTP before using the feature:
+
+```env
+APP_BASE_URL=https://render-desk.onrender.com
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-smtp-user
+SMTP_PASSWORD=your-smtp-password
+SMTP_FROM=support@example.com
+```
+
+For local development, set `APP_BASE_URL=http://localhost:3000`. If SMTP is not
+configured, the request returns a configuration error and no reset email is
+claimed to have been sent.
+
 ### Environment variables
 
 Copy `.env.example` to `.env`. Use placeholders or a secret manager for shared environments; never commit real credentials.
@@ -309,7 +332,9 @@ The Docker image builds the frontend and bundled server with Node.js 24 Alpine. 
 Required Render variables are `MONGO_URI`, `CORS_ORIGIN`,
 `ADMIN_PASSWORD`, `GOOGLE_CLIENT_ID`, `KRAWL_API_URL`,
 `KRAWL_DASHBOARD_PASSWORD`, `KRAWL_DASHBOARD_SECRET_PATH`, and
-`NODE_ENV=production`. Use `https://render-desk.onrender.com` as the production
+`APP_BASE_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`,
+`SMTP_PASSWORD`, `SMTP_FROM`, and `NODE_ENV=production`. Use
+`https://render-desk.onrender.com` as the production
 `CORS_ORIGIN`. Keep database credentials, OAuth values, and Krawl passwords in
 Render's environment settings, not in this file.
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '@/src/api';
 import { GoogleLogin } from '@react-oauth/google';
 import { getGoogleClientId } from '@/src/lib/google';
@@ -113,6 +113,14 @@ export function CustomerLogin() {
             {loading ? 'Please wait...' : mode === 'login' ? 'Sign in as customer' : 'Create customer account'}
           </button>
         </form>
+        {mode === 'login' && (
+          <Link
+            to="/forgot-password"
+            className="mt-4 block text-center text-xs font-mono font-bold uppercase underline"
+          >
+            Forgot password?
+          </Link>
+        )}
         <div className="mt-6 space-y-3">
           <div className="flex items-center gap-3 text-[10px] font-mono font-bold uppercase text-ink-muted">
             <span className="h-px flex-1 bg-line" /> Or continue with <span className="h-px flex-1 bg-line" />

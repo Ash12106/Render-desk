@@ -148,6 +148,16 @@ export const api = {
       body: JSON.stringify(data),
     });
   },
+  requestPasswordReset: (email: string) =>
+    fetchJson<{ message: string }>('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+  resetPassword: (token: string, password: string) =>
+    fetchJson<{ message: string }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    }),
 
   registerCustomer: (data: { name: string; email: string; username: string; password: string }) => {
     return fetchJson<User>('/api/customer-auth/register', {

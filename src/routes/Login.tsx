@@ -79,6 +79,9 @@ export function Login() {
             {loading ? 'Logging in...' : 'Log In'}
           </button>
         </form>
+        <Link to="/forgot-password" className="mt-4 block text-center text-xs font-mono font-bold uppercase underline">
+          Forgot password?
+        </Link>
         <div className="mt-6">
           {googleClientId ? (
             <GoogleLogin
