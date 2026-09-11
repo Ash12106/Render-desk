@@ -3,11 +3,14 @@ import axios from 'axios';
 
 const router = express.Router();
 
-// Local development uses the published Compose port; containers use http://krawl:5000.
-const KRAWL_API_URL = process.env.KRAWL_API_URL;
 const KRAWL_DASHBOARD_PASSWORD = process.env.KRAWL_DASHBOARD_PASSWORD;
 const KRAWL_DASHBOARD_SECRET_PATH =
   '/' + (process.env.KRAWL_DASHBOARD_SECRET_PATH || '/security-dashboard-secret').replace(/^\/+|\/+$/g, '');
+// Accept either the Krawl service root or a URL that already includes the dashboard path.
+const configuredKrawlUrl = process.env.KRAWL_API_URL?.trim().replace(/\/+$/, '');
+const KRAWL_API_URL = configuredKrawlUrl?.endsWith(KRAWL_DASHBOARD_SECRET_PATH)
+  ? configuredKrawlUrl.slice(0, -KRAWL_DASHBOARD_SECRET_PATH.length)
+  : configuredKrawlUrl;
 
 const krawlClient = axios.create({
   baseURL: KRAWL_API_URL,

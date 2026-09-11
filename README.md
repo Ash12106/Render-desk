@@ -238,6 +238,12 @@ then set `KRAWL_API_URL` to its private service URL. Do not expose Krawl's dashb
 directly to the public internet. The Render web service proxies Krawl data only
 through the admin-authenticated `/api/admin/krawl/*` routes.
 
+`KRAWL_API_URL` must be the Krawl service URL, for example
+`https://krawl-service.example.com`; do not set it to
+`https://render-desk.onrender.com`. The proxy also accepts the Krawl service URL
+with `/security-dashboard-secret` appended, but the separate
+`KRAWL_DASHBOARD_SECRET_PATH` value must remain `/security-dashboard-secret`.
+
 `GOOGLE_CLIENT_ID` is read by the server at runtime. The frontend reads the
 public client ID from `/api/auth/config`, so Docker does not need a
 `VITE_GOOGLE_CLIENT_ID` build argument. Keeping `VITE_GOOGLE_CLIENT_ID` set is
