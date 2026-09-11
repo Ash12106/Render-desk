@@ -100,10 +100,13 @@ export function StaffManagement() {
         />
         <input
           aria-label="Staff phone"
+          inputMode="numeric"
+          maxLength={10}
+          pattern="[0-9]{10}"
           value={draft.phone}
           onChange={(e) => setDraft({ ...draft, phone: e.target.value })}
           className="border border-ink rounded p-2"
-          placeholder="Phone"
+          placeholder="10-digit phone number"
         />
         <select
           aria-label="Staff team"
@@ -274,6 +277,9 @@ export function StaffManagement() {
             className="border-2 border-ink rounded-md p-3"
           />
           <input
+            inputMode="numeric"
+            maxLength={10}
+            pattern="[0-9]{10}"
             placeholder="Phone"
             value={form.phone}
             onChange={(e) => setForm({ ...form, phone: e.target.value })}

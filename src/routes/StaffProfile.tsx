@@ -110,10 +110,13 @@ export function StaffProfile() {
               placeholder="Email"
             />
             <input
+              inputMode="numeric"
+              maxLength={10}
+              pattern="[0-9]{10}"
               value={details.phone}
               onChange={(e) => setDetails({ ...details, phone: e.target.value })}
               className="border-2 border-ink rounded-md p-3"
-              placeholder="Phone"
+              placeholder="10-digit phone number"
             />
             <button className="bg-ink text-white rounded-md p-3 font-mono text-xs font-bold uppercase">
               Save details

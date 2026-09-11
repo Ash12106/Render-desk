@@ -113,9 +113,9 @@ describe.skipIf(!testMongoUri)('Support Desk API (dedicated test database)', () 
     const customerUpdate = await request(app)
       .patch('/api/customer/profile')
       .set('Authorization', `Bearer ${customerToken}`)
-      .send({ name: 'Updated Customer', email: 'updated@example.com', phone: '555-0100' });
+      .send({ name: 'Updated Customer', email: 'updated@example.com', phone: '5550100000' });
     expect(customerUpdate.status).toBe(200);
-    expect(customerUpdate.body.phone).toBe('555-0100');
+    expect(customerUpdate.body.phone).toBe('5550100000');
   });
 
   it('lets admins create staff with teams and inspect workload metrics', async () => {

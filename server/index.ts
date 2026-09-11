@@ -82,6 +82,12 @@ const commentSchema = z.object({
   author: z.string().trim().min(1, 'Author name required.'),
 });
 
+const phoneSchema = z
+  .string()
+  .trim()
+  .refine((value) => value === '' || /^\d{10}$/.test(value), 'Phone number must contain exactly 10 digits.')
+  .optional();
+
 const mutationLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 60,
@@ -491,7 +497,7 @@ export async function buildApp() {
         .object({
           displayName: z.string().trim().min(2),
           email: z.string().email(),
-          phone: z.string().trim().max(30).optional(),
+          phone: phoneSchema,
         })
         .strict()
         .parse(req.body);
@@ -607,7 +613,7 @@ export async function buildApp() {
           password: z.string().min(8),
           displayName: z.string().trim().min(2),
           email: z.string().email(),
-          phone: z.string().trim().optional(),
+          phone: phoneSchema,
           team: z.string().trim().min(1),
           branch: z.string().trim().min(1),
           role: z.enum(['admin', 'staff']).default('staff'),
@@ -642,7 +648,7 @@ export async function buildApp() {
         .object({
           displayName: z.string().trim().min(2),
           email: z.string().email(),
-          phone: z.string().trim().max(30).optional(),
+          phone: phoneSchema,
           team: z.string().trim().min(1),
           branch: z.string().trim().min(1),
         })
@@ -760,7 +766,7 @@ export async function buildApp() {
         .object({
           name: z.string().trim().min(2),
           email: z.string().email(),
-          phone: z.string().trim().max(30).optional(),
+          phone: phoneSchema,
         })
         .parse(req.body);
       const customer = await Customer.findByIdAndUpdate((req as any).user.customerId, data, {
