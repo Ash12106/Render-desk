@@ -21,6 +21,7 @@ import { StaffProfile } from './routes/StaffProfile';
 import { CustomerProfile } from './routes/CustomerProfile';
 import { StaffDirectory } from './routes/StaffDirectory';
 import { StaffManagement } from './routes/StaffManagement';
+import { KrawlSecurityAdmin } from './components/admin/KrawlSecurityAdmin';
 import { getStoredAuthUser } from './lib/auth';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -29,6 +30,13 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/" replace />;
   }
   if (authUser.role === 'customer') return <Navigate to="/customer" replace />;
+  return <>{children}</>;
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const authUser = getStoredAuthUser();
+  if (!authUser) return <Navigate to="/" replace />;
+  if (authUser.role !== 'admin') return <Navigate to="/tickets" replace />;
   return <>{children}</>;
 }
 
@@ -60,8 +68,33 @@ export default function App() {
             <Route path="tickets/:id/edit" element={<TicketFormRoute />} />
             <Route path="customers/:id" element={<CustomerDetail />} />
             <Route path="profile" element={<StaffProfile />} />
-            <Route path="staff" element={<StaffDirectory />} />
-            <Route path="staff-management" element={<StaffManagement />} />
+            <Route
+              path="staff"
+              element={
+                <AdminRoute>
+                  <StaffDirectory />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="staff-management"
+              element={
+                <AdminRoute>
+                  <StaffManagement />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="krawl"
+              element={
+                <AdminRoute>
+                  <div className="max-w-6xl mx-auto px-4">
+                    <h1 className="sr-only">Krawl dashboard</h1>
+                    <KrawlSecurityAdmin />
+                  </div>
+                </AdminRoute>
+              }
+            />
             <Route
               path="*"
               element={

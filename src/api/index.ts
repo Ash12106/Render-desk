@@ -1,6 +1,6 @@
 import { Ticket, Customer, Comment, User, AuditLog, CustomerNotification } from '../types';
 
-async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
+export async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const authUserStr = localStorage.getItem('auth_user');
   const authHeader: Record<string, string> = {};
   if (authUserStr) {
@@ -23,9 +23,10 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     },
   });
 
+  if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => null);
 
-  if (!res.ok) {
+  if (!res.ok || data?.success === false) {
     if (data && data.success === false) {
       const err = new Error(data.message) as any;
       if (data.fields) err.code = 'VALIDATION_ERROR';
@@ -39,6 +40,10 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
       throw new Error('The running server is outdated. Restart the development server and try again.');
     }
     throw new Error(`Request failed (${res.status}). Please try again.`);
+  }
+
+  if (data === null) {
+    throw new Error('The server returned an invalid response. Please try again.');
   }
 
   if (data && data.success === true && data.data !== undefined) {

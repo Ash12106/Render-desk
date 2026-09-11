@@ -9,8 +9,6 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 3000
       - key: ADMIN_PASSWORD
         sync: false
       - key: MONGO_URI
@@ -23,3 +21,9 @@ services:
         sync: false
       - key: VITE_GOOGLE_CLIENT_ID
         sync: false
+      - key: KRAWL_API_URL
+        sync: false
+      - key: KRAWL_DASHBOARD_PASSWORD
+        sync: false
+      - key: KRAWL_DASHBOARD_SECRET_PATH
+        value: /security-dashboard-secret

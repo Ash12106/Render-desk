@@ -1,12 +1,13 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/src/api';
 import { TicketForm } from '@/src/components/ui/TicketForm';
 import { Ticket } from '@/src/types';
 
 export function CustomerTicketFormRoute() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const profile = useQuery({ queryKey: ['customer-profile'], queryFn: api.getCustomerProfile });
 
   if (profile.isPending) return <div className="animate-pulse h-64 bg-surface border border-line rounded-md m-8" />;
@@ -35,6 +36,7 @@ export function CustomerTicketFormRoute() {
         customerMode
         onSubmit={async (formData) => {
           await api.createCustomerTicket(formData);
+          await queryClient.invalidateQueries({ queryKey: ['customer-tickets'] });
           navigate('/customer');
         }}
         onCancel={() => navigate('/customer')}

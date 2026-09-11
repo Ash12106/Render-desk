@@ -47,10 +47,29 @@ export function StaffManagement() {
   });
 
   if (profile.isPending) return <div className="animate-pulse h-64 bg-surface border border-line rounded-md m-8" />;
+  if (profile.isError)
+    return (
+      <p role="alert" className="p-8 text-danger">
+        Unable to load your profile. Please try again.
+      </p>
+    );
   if (!profile.data || profile.data.role !== 'admin') {
     return <p className="p-8 text-danger">Administrator access is required to manage staff.</p>;
   }
+  if (users.isPending)
+    return (
+      <p role="status" className="p-8">
+        Loading staff accounts...
+      </p>
+    );
+  if (users.isError)
+    return (
+      <p role="alert" className="p-8 text-danger">
+        Unable to load staff accounts. {users.error.message}
+      </p>
+    );
 
+  const mutationError = createMutation.error || profileMutation.error || roleMutation.error;
   const staff = users.data || [];
   const admins = staff.filter((user) => user.role === 'admin');
   const staffMembers = staff.filter((user) => user.role === 'staff');
@@ -204,6 +223,12 @@ export function StaffManagement() {
           Create staff accounts and keep teams, branches, and access roles accurate.
         </p>
       </header>
+
+      {mutationError && (
+        <p role="alert" className="p-4 border border-danger text-danger rounded-md">
+          {mutationError.message}
+        </p>
+      )}
 
       <section className="bg-surface border-2 border-ink rounded-md p-6">
         <div className="flex items-center gap-3 mb-5">

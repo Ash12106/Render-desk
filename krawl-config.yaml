@@ -1,0 +1,68 @@
+# Krawl Configuration for Render-desk Integration
+# This file configures the Krawl honeypot instance
+
+mode: standalone  # Use 'scalable' with PostgreSQL+Redis for production
+
+server:
+  port: 5000
+  host: "0.0.0.0"
+
+dashboard:
+  # Secret path to prevent accidental discovery
+  secret_path: "/security-dashboard-secret"
+  password: "${KRAWL_DASHBOARD_PASSWORD}"
+  password_hash_iterations: 100000
+  cache_warmup: true
+
+# Database configuration (SQLite for standalone mode)
+database:
+  path: "/app/data/krawl.db"
+  # For scalable mode, use PostgreSQL (configured via environment variables)
+
+# Tarpit settings - slow down attackers
+tarpit:
+  enabled: true
+  delay_ms_range: [100, 500]
+  noise_injection: true
+
+# Deception settings
+deception:
+  enabled: true
+  traps:
+    - "/admin"
+    - "/wp-admin"
+    - "/phpmyadmin"
+    - "/.env"
+    - "/.aws/credentials"
+    - "/config.php"
+
+# IP reputation analysis
+reputation:
+  enabled: true
+  analysis_interval: 3600  # seconds
+  risky_methods_threshold: 0.2
+  violated_robots_threshold: 0.15
+  bursty_behavior_threshold: 0.1
+
+# Banlist configuration
+banlist:
+  enabled: true
+  ban_duration: 86400  # 24 hours
+  export_path: "/public_banlist.txt"
+  # Upstream banlists to fetch
+  sources: []
+
+# Metrics
+metrics:
+  enabled: true
+
+# Logging
+log_level: INFO
+
+# AI-generated deception pages (optional)
+ai:
+  enabled: false
+  # provider: "openrouter"  # or "openai"
+  # api_key: "${OPENROUTER_API_KEY}"
+  # model: "nvidia/nemotron-3-super-120b-a12b:free"
+  # max_daily_requests: 10

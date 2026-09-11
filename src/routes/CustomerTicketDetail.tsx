@@ -11,7 +11,11 @@ export function CustomerTicketDetail() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const [newComment, setNewComment] = useState('');
-  const tickets = useQuery({ queryKey: ['customer-tickets'], queryFn: api.getCustomerTickets });
+  const tickets = useQuery({
+    queryKey: ['customer-tickets'],
+    queryFn: api.getCustomerTickets,
+    refetchInterval: 15000,
+  });
   const comments = useQuery({
     queryKey: ['customer-ticket-comments', id],
     queryFn: () => api.getCustomerComments(id!),
@@ -27,6 +31,12 @@ export function CustomerTicketDetail() {
     },
   });
   if (tickets.isPending) return <div className="animate-pulse h-64 bg-surface border border-line rounded-md m-8" />;
+  if (tickets.isError)
+    return (
+      <p role="alert" className="p-8 text-danger">
+        Unable to load your ticket. {tickets.error.message}
+      </p>
+    );
   const ticket = tickets.data?.find((item) => item.id === id);
   if (!ticket)
     return (

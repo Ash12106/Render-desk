@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '@/src/api';
 import { Ticket, Customer } from '@/src/types';
@@ -11,6 +12,7 @@ export function TicketFormRoute() {
   const { id } = useParams<{ id: string }>();
   const isEdit = !!id;
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const location = new URLSearchParams(window.location.search);
   const prefillCustomerId = location.get('customerId');
   const { showToast } = useToast();
@@ -69,13 +71,18 @@ export function TicketFormRoute() {
     try {
       if (isEdit && id) {
         await api.updateTicket(id, formData);
-        showToast('Ticket updated successfully');
-        navigate(`/tickets/${id}`);
       } else {
         await api.createTicket(formData);
-        showToast('Ticket created successfully');
-        navigate('/tickets');
       }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['tickets'] }),
+        queryClient.invalidateQueries({ queryKey: ['ticket', id] }),
+        queryClient.invalidateQueries({ queryKey: ['ticket-stats'] }),
+        queryClient.invalidateQueries({ queryKey: ['customer-tickets'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-users'] }),
+      ]);
+      showToast(isEdit ? 'Ticket updated successfully' : 'Ticket created successfully');
+      navigate(isEdit ? `/tickets/${id}` : '/tickets');
     } catch (err: any) {
       if (err.code === 'VALIDATION_ERROR' && err.fields) {
         setFieldErrors(err.fields);

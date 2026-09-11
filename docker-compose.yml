@@ -25,6 +25,31 @@ services:
         mongosh --host mongo:27017 --quiet --eval
         "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) }"
 
+  krawl:
+    image: ghcr.io/blessedrebus/krawl:latest
+    container_name: krawl-honeypot
+    restart: unless-stopped
+    environment:
+      CONFIG_LOCATION: /app/config.yaml
+      KRAWL_MODE: standalone
+      KRAWL_PORT: 5000
+      KRAWL_DASHBOARD_PASSWORD: ${KRAWL_DASHBOARD_PASSWORD:?KRAWL_DASHBOARD_PASSWORD must be set}
+      KRAWL_DASHBOARD_SECRET_PATH: ${KRAWL_DASHBOARD_SECRET_PATH:-/security-dashboard-secret}
+    volumes:
+      - ./krawl-config.yaml:/app/config.yaml:ro
+      - krawl_data:/app/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import os, urllib.request;
+          urllib.request.urlopen('http://localhost:5000' +
+          os.getenv('KRAWL_DASHBOARD_SECRET_PATH', '/security-dashboard-secret') +
+          '/healthz')"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   app:
     build:
       context: .
@@ -40,8 +65,12 @@ services:
       MONGO_URI: mongodb://mongo:27017/support-ops?replicaSet=rs0
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      KRAWL_API_URL: http://krawl:5000
+      KRAWL_DASHBOARD_PASSWORD: ${KRAWL_DASHBOARD_PASSWORD:?KRAWL_DASHBOARD_PASSWORD must be set}
+      KRAWL_DASHBOARD_SECRET_PATH: ${KRAWL_DASHBOARD_SECRET_PATH:-/security-dashboard-secret}
     ports:
       - '${PORT:-3000}:3000'
 
 volumes:
   mongo_data:
+  krawl_data:

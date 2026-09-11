@@ -37,7 +37,11 @@ async function startApplication() {
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      {googleClientId ? <GoogleOAuthProvider clientId={googleClientId}>{application}</GoogleOAuthProvider> : application}
+      {googleClientId ? (
+        <GoogleOAuthProvider clientId={googleClientId}>{application}</GoogleOAuthProvider>
+      ) : (
+        application
+      )}
     </StrictMode>,
   );
 }

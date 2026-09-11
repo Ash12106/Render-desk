@@ -34,6 +34,7 @@ export function TicketDetail() {
     const load = async () => {
       try {
         setLoading(true);
+        setError(null);
         const { ticket: fetchedTicket, comments: fetchedComments, logs: fetchedLogs } = await api.getTicket(id);
         setTicket(fetchedTicket);
 
@@ -116,10 +117,10 @@ export function TicketDetail() {
       );
 
       showToast(`Status changed to ${newStatus}`);
-      if (notifyUser) showToast('Customer notification simulated');
-    } catch (_err: any) {
+      if (notifyUser) showToast('Customer portal notification saved');
+    } catch (err: any) {
       setTicket(oldTicket);
-      showToast('Failed to update status');
+      showToast(err.message || 'Failed to update status', 'error');
     }
   };
 

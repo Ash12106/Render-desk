@@ -17,10 +17,10 @@ export function Layout() {
   return (
     <div className="min-h-screen flex flex-col bg-canvas">
       <header className="bg-canvas border-b-2 border-ink">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 min-h-16 py-3 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <span className="font-mono font-bold text-ink text-sm tracking-wider uppercase">Support Desk</span>
-            <nav className="hidden md:flex space-x-4">
+            <nav aria-label="Staff navigation" className="flex flex-wrap gap-2">
               <NavLink
                 to="/tickets"
                 className={({ isActive }) =>
@@ -55,6 +55,17 @@ export function Layout() {
                     }
                   >
                     Manage staff
+                  </NavLink>
+                  <NavLink
+                    to="/krawl"
+                    className={({ isActive }) =>
+                      cn(
+                        'px-3 py-1.5 rounded-full text-xs font-mono font-bold uppercase tracking-wider transition-colors border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy',
+                        isActive ? 'bg-ink text-white border-ink' : 'text-ink border-transparent hover:border-ink/30',
+                      )
+                    }
+                  >
+                    Krawl
                   </NavLink>
                 </>
               )}

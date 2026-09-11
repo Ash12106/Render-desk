@@ -2,10 +2,13 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { buildApp } from './index.js';
 import mongoose from 'mongoose';
-import { User, Customer, Ticket, Comment, DeletedTicket } from './mongo.js';
+import { User, Customer, Ticket, Comment, DeletedTicket, AuditLog, Notification } from './mongo.js';
 import bcrypt from 'bcryptjs';
 
-describe('Support Desk API', () => {
+const testMongoUri = process.env.TEST_MONGODB_URI;
+
+describe.skipIf(!testMongoUri)('Support Desk API (dedicated test database)', () => {
+  const staffUsername = `teststaff${Date.now()}`;
   let app: any;
   let token: string;
   let testCustomer: any;
@@ -16,18 +19,18 @@ describe('Support Desk API', () => {
   let adminToken: string;
 
   beforeAll(async () => {
-    // Setup mongoose to memory if needed, but we can just use the provided URI or skip if not connected
-    if (!process.env.MONGODB_URI) {
-      console.warn('Skipping API tests: MONGODB_URI not set');
-      return;
+    // Never run mutating integration tests against the application's database.
+    const databaseName = new URL(testMongoUri!).pathname.slice(1);
+    if (!databaseName.endsWith('_test')) {
+      throw new Error('TEST_MONGODB_URI must point to a dedicated database ending in _test.');
     }
-    await mongoose.connect(process.env.MONGODB_URI);
+    await mongoose.connect(testMongoUri!, { serverSelectionTimeoutMS: 5000 });
 
     app = await buildApp();
 
     // Create a test user
     const passwordHash = await bcrypt.hash('testpass', 10);
-    const user = await User.create({ username: 'testuser', passwordHash });
+    const user = await User.create({ username: staffUsername, passwordHash });
     token = user._id.toString();
 
     // Create a test customer
@@ -40,39 +43,43 @@ describe('Support Desk API', () => {
       customerId: testCustomer._id,
     });
     customerToken = customerUser._id.toString();
-    const admin = await User.findOne({ username: 'admin' });
-    adminToken = admin?._id.toString();
-  });
+    const admin = await User.create({ username: `testadmin${Date.now()}`, passwordHash, role: 'admin' });
+    adminToken = admin._id.toString();
+  }, 30000);
 
   afterAll(async () => {
     if (mongoose.connection.readyState !== 0) {
-      await User.deleteMany({ username: 'testuser' });
-      await User.findByIdAndDelete(customerUser?._id);
+      if (token) await User.findByIdAndDelete(token);
+      if (adminToken) await User.findByIdAndDelete(adminToken);
+      if (customerUser) await User.findByIdAndDelete(customerUser._id);
       if (registeredCustomerUser) {
         await Customer.findByIdAndDelete(registeredCustomerUser.customerId);
         await User.findByIdAndDelete(registeredCustomerUser.id);
       }
       await Customer.findByIdAndDelete(testCustomer?._id);
-      if (testTicket) {
-        await Ticket.findByIdAndDelete(testTicket._id);
-        await DeletedTicket.findByIdAndDelete(testTicket._id);
-        await Comment.deleteMany({ ticketId: testTicket._id });
+      if (testCustomer) {
+        const active = await Ticket.find({ customerId: testCustomer._id }).select('_id');
+        const archived = await DeletedTicket.find({ customerId: testCustomer._id }).select('_id');
+        const ticketIds = [...active, ...archived].map((ticket) => ticket._id);
+        await Ticket.deleteMany({ customerId: testCustomer._id });
+        await DeletedTicket.deleteMany({ customerId: testCustomer._id });
+        await Comment.deleteMany({ ticketId: { $in: ticketIds } });
+        await AuditLog.deleteMany({ ticketId: { $in: ticketIds } });
+        await Notification.deleteMany({ customerId: testCustomer._id });
       }
       await mongoose.disconnect();
     }
   });
 
   it('should authenticate user and return token', async () => {
-    if (!app) return;
-    const res = await request(app).post('/api/auth/login').send({ username: 'testuser', password: 'testpass' });
+    const res = await request(app).post('/api/auth/login').send({ username: staffUsername, password: 'testpass' });
 
     expect(res.status).toBe(200);
-    expect(res.body.username).toBe('testuser');
+    expect(res.body.username).toBe(staffUsername);
     expect(res.body.id).toBe(token);
   });
 
   it('reports database readiness', async () => {
-    if (!app) return;
     const res = await request(app).get('/api/health/db');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');
@@ -80,7 +87,6 @@ describe('Support Desk API', () => {
   });
 
   it('returns account profile timestamps and protects admin role management', async () => {
-    if (!app) return;
     const profile = await request(app).get('/api/profile').set('Authorization', `Bearer ${token}`);
     expect(profile.status).toBe(200);
     expect(profile.body.createdAt).toBeDefined();
@@ -113,7 +119,6 @@ describe('Support Desk API', () => {
   });
 
   it('lets admins create staff with teams and inspect workload metrics', async () => {
-    if (!app || !adminToken) return;
     const username = `managedstaff${Date.now()}`;
     const created = await request(app)
       .post('/api/admin/users')
@@ -155,13 +160,11 @@ describe('Support Desk API', () => {
   });
 
   it('should protect routes with auth middleware', async () => {
-    if (!app) return;
     const res = await request(app).get('/api/tickets');
     expect(res.status).toBe(401);
   });
 
   it('accepts multiple ticket sort criteria', async () => {
-    if (!app) return;
     const res = await request(app)
       .get('/api/tickets?limit=10&offset=0&sort=priority,date')
       .set('Authorization', `Bearer ${token}`);
@@ -170,13 +173,11 @@ describe('Support Desk API', () => {
   });
 
   it('should validate Google login credentials before attempting verification', async () => {
-    if (!app) return;
     const res = await request(app).post('/api/auth/google').send({});
     expect(res.status).toBe(400);
   });
 
   it('should register a separate customer account', async () => {
-    if (!app) return;
     const username = `newcustomer${Date.now()}`;
     const res = await request(app)
       .post('/api/customer-auth/register')
@@ -193,7 +194,6 @@ describe('Support Desk API', () => {
   });
 
   it('should create a new ticket', async () => {
-    if (!app) return;
     const res = await request(app)
       .post('/api/tickets')
       .set('Authorization', `Bearer ${token}`)
@@ -216,10 +216,12 @@ describe('Support Desk API', () => {
     expect(res.body.impact).toBe('Major');
     expect(res.body.attachments).toHaveLength(1);
     testTicket = res.body;
+    const persisted = await Ticket.findById(testTicket.id);
+    expect(persisted?.title).toBe(res.body.title);
+    expect(persisted?.customerId.toString()).toBe(testCustomer.id);
   });
 
   it('accepts Critical priority for new tickets', async () => {
-    if (!app) return;
     const res = await request(app).post('/api/tickets').set('Authorization', `Bearer ${token}`).send({
       customerId: testCustomer._id.toString(),
       title: 'Critical priority test ticket',
@@ -234,7 +236,6 @@ describe('Support Desk API', () => {
   });
 
   it('should fetch tickets with pagination', async () => {
-    if (!app) return;
     const res = await request(app).get('/api/tickets?limit=10&offset=0').set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(200);
@@ -244,7 +245,6 @@ describe('Support Desk API', () => {
   });
 
   it('should get a single ticket with comments', async () => {
-    if (!app) return;
     const res = await request(app).get(`/api/tickets/${testTicket.id}`).set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(200);
@@ -253,7 +253,6 @@ describe('Support Desk API', () => {
   });
 
   it('should update a ticket', async () => {
-    if (!app) return;
     const res = await request(app).put(`/api/tickets/${testTicket.id}`).set('Authorization', `Bearer ${token}`).send({
       customerId: testCustomer._id.toString(),
       title: 'Updated Title',
@@ -270,7 +269,6 @@ describe('Support Desk API', () => {
   });
 
   it('lets admins assign a group and staff member but not change status', async () => {
-    if (!app || !adminToken) return;
     const assignment = await request(app)
       .patch(`/api/admin/tickets/${testTicket.id}/assignment`)
       .set('Authorization', `Bearer ${adminToken}`)
@@ -293,7 +291,6 @@ describe('Support Desk API', () => {
   });
 
   it('lets admins bulk assign selected tickets to one staff member', async () => {
-    if (!app || !adminToken) return;
     const bulkAssignment = await request(app)
       .patch('/api/admin/tickets/assignment')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -303,7 +300,6 @@ describe('Support Desk API', () => {
   });
 
   it('lets assigned staff update activity status', async () => {
-    if (!app) return;
     const activityUpdate = await request(app)
       .patch(`/api/tickets/${testTicket.id}/activity-status`)
       .set('Authorization', `Bearer ${token}`)
@@ -313,7 +309,6 @@ describe('Support Desk API', () => {
   });
 
   it('lets staff toggle availability and blocks unavailable assignments', async () => {
-    if (!app || !adminToken) return;
     const unavailable = await request(app)
       .patch('/api/profile/availability')
       .set('Authorization', `Bearer ${token}`)
@@ -334,7 +329,6 @@ describe('Support Desk API', () => {
   });
 
   it('scopes customer access and stores status notifications', async () => {
-    if (!app) return;
     const customerProfile = await request(app)
       .get('/api/customer/profile')
       .set('Authorization', `Bearer ${customerToken}`);
@@ -358,7 +352,6 @@ describe('Support Desk API', () => {
   });
 
   it('notifies the customer when staff uses bulk status updates', async () => {
-    if (!app) return;
     const update = await request(app)
       .put('/api/tickets/bulk-status')
       .set('Authorization', `Bearer ${token}`)
@@ -372,7 +365,6 @@ describe('Support Desk API', () => {
   });
 
   it('lets customers clear individual and all notifications', async () => {
-    if (!app) return;
     const current = await request(app)
       .get('/api/customer/notifications')
       .set('Authorization', `Bearer ${customerToken}`);
@@ -404,7 +396,6 @@ describe('Support Desk API', () => {
   });
 
   it('rejects reopening a closed ticket', async () => {
-    if (!app) return;
     const created = await request(app).post('/api/tickets').set('Authorization', `Bearer ${token}`).send({
       customerId: testCustomer._id.toString(),
       title: 'Closed conversation test ticket',
@@ -466,7 +457,6 @@ describe('Support Desk API', () => {
   }, 15_000);
 
   it('should add a comment to a ticket', async () => {
-    if (!app) return;
     const res = await request(app)
       .post(`/api/tickets/${testTicket.id}/comments`)
       .set('Authorization', `Bearer ${token}`)
@@ -480,7 +470,6 @@ describe('Support Desk API', () => {
   });
 
   it('lets the ticket customer read and add conversation comments', async () => {
-    if (!app) return;
     const customerComments = await request(app)
       .get(`/api/customer/tickets/${testTicket.id}/comments`)
       .set('Authorization', `Bearer ${customerToken}`);
@@ -501,14 +490,13 @@ describe('Support Desk API', () => {
   });
 
   it('should delete a ticket', async () => {
-    if (!app) return;
     const res = await request(app).delete(`/api/tickets/${testTicket.id}`).set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(204);
 
     const archived = await DeletedTicket.findById(testTicket.id);
     expect(archived).not.toBeNull();
-    expect((archived as any)?.deletedBy).toBe('testuser');
+    expect((archived as any)?.deletedBy).toBe(staffUsername);
 
     const check = await request(app).get(`/api/tickets/${testTicket.id}`).set('Authorization', `Bearer ${token}`);
 

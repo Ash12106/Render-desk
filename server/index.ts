@@ -18,6 +18,7 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import cors from 'cors';
 import helmet from 'helmet';
+import krawlRouter from './krawl.js';
 import rateLimit from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
 import { OAuth2Client } from 'google-auth-library';
@@ -39,7 +40,11 @@ const ticketSchema = z.object({
     message: 'Choose a valid status.',
   }),
   activityStatus: z.enum(['Unread', 'Read', 'Awaiting customer response', 'Awaiting technician response']).optional(),
-  dueDate: z.string().optional().nullable(),
+  dueDate: z
+    .string()
+    .refine((value) => !value || Number.isFinite(Date.parse(value)), 'Enter a valid due date.')
+    .optional()
+    .nullable(),
   category: z.enum(['Technical', 'Sales', 'Billing', 'Account', 'Other']).default('Technical'),
   assignmentType: z.enum(['Incident', 'Problem', 'Request', 'Change']).default('Incident'),
   contract: z.string().trim().max(120).optional().default(''),
@@ -269,7 +274,7 @@ export async function buildApp() {
             {
               name: data.name,
               email: data.email.toLowerCase(),
-              customerCode: `CUST-${Math.floor(1000 + Math.random() * 9000)}`,
+              customerCode: `CUST-${new mongoose.Types.ObjectId().toString().toUpperCase()}`,
             },
           ],
           { session },
@@ -357,17 +362,24 @@ export async function buildApp() {
     if (
       err.name === 'MongooseError' ||
       err.name === 'MongoNetworkError' ||
+      err.name === 'MongoServerSelectionError' ||
+      err.name === 'MongoNotConnectedError' ||
       (err.message && err.message.includes('buffering timed out'))
     ) {
-      console.warn('Database offline — returning mock empty response');
-      if (req.method === 'GET') {
-        return res.json(req.path.endsWith('s') || req.path.endsWith('s/') ? [] : {});
-      }
+      console.warn('Database unavailable — request failed');
       return res
         .status(503)
         .json({ success: false, message: 'Service temporarily unavailable (database offline)', data: null });
     }
 
+    if (err?.code === 11000) {
+      return res
+        .status(409)
+        .json({ success: false, message: 'An account with these details already exists.', data: null });
+    }
+    if (err?.name === 'CastError' || err?.name === 'ValidationError') {
+      return res.status(400).json({ success: false, message: 'Invalid request data.', data: null });
+    }
     if (err instanceof z.ZodError) {
       const fields: Record<string, string> = {};
       err.issues.forEach((e) => {
@@ -396,7 +408,12 @@ export async function buildApp() {
   // POST /api/auth/login
   app.post('/api/auth/login', async (req, res) => {
     try {
-      const { username, password } = req.body;
+      const { username, password } = z
+        .object({
+          username: z.string().trim().min(1),
+          password: z.string().min(1),
+        })
+        .parse(req.body);
       const user = await User.findOne({ username });
       if (!user) {
         return res.status(401).json({ success: false, message: 'Invalid credentials', data: null });
@@ -411,8 +428,9 @@ export async function buildApp() {
     }
   });
 
-  // Apply Auth Middleware to all subsequent API routes
+  // Authenticate API requests before mounting routes that use the current user.
   app.use('/api', authMiddleware);
+  app.use(krawlRouter);
 
   app.get('/api/profile', async (req, res) => {
     try {
@@ -643,7 +661,14 @@ export async function buildApp() {
         details: `Activity status changed to ${activityStatus}`,
         author: (req as any).user?.username || 'System',
       });
-      res.json(ticket);
+      res.json({
+        ...ticket.toJSON(),
+        customerId: (ticket.customerId as any)?.id,
+        customerName: (ticket.customerId as any)?.name,
+        customerEmail: (ticket.customerId as any)?.email,
+        assignedTo: (ticket.assignedTo as any)?.id || null,
+        assignedStaffName: (ticket.assignedTo as any)?.displayName || (ticket.assignedTo as any)?.username,
+      });
     } catch (err) {
       handleApiError(res, req, err);
     }
@@ -918,8 +943,12 @@ export async function buildApp() {
       if (priority) filter.priority = priority;
       if (customerId) filter.customerId = customerId;
 
-      const parsedLimit = Math.min(parseInt(limit as string) || 50, 100); // enforce max limit
-      const parsedOffset = parseInt(offset as string) || 0;
+      const { limit: parsedLimit, offset: parsedOffset } = z
+        .object({
+          limit: z.coerce.number().int().min(1).max(100).default(50),
+          offset: z.coerce.number().int().min(0).default(0),
+        })
+        .parse({ limit, offset });
 
       const sortObj: Record<string, 1 | -1> = {};
       const requestedSorts = typeof sort === 'string' ? sort.split(',') : [];
@@ -1412,5 +1441,9 @@ async function startServer() {
 }
 
 if (process.env.VITEST !== 'true') {
-  startServer();
+  startServer().catch(async () => {
+    console.error('Server startup failed. Check MongoDB configuration, replica-set support, and network access.');
+    await mongoose.disconnect();
+    process.exitCode = 1;
+  });
 }

@@ -5,10 +5,12 @@ Support Ops Desk is an internal service-ticket management application used by cu
 **Author:** Aashish A. Shirahatti, 3rd-year CSE-AIML student at VVCE, Mysore.
 
 **Live demo:** `https://render-desk.onrender.com`<br>
-**Tried to add google Auth but has issues with my console use these for testing:** `Username:admin,password:admin@2026`,`Staff:Aashish6782,password:Asdf0987`,`Customer:Uthi27,password:Asdf1234`<br>
-**You can add new Staff from the admin login and then use the same credentionals to log on to staff Account**
-**You can add new Customers from create account option on signin page** 
-**While Local developnment after adding db connection you can run `npm run seed` to genrate tickets, customers, comments, and audit records.**
+**Local administrator:** `Username: admin`, with the password configured by `ADMIN_PASSWORD` in the untracked `.env` file.<br>
+Staff accounts are created by an administrator from staff management. Customer
+accounts are created from the customer registration page. Staff and customer
+passwords are not seeded or hardcoded in the repository.
+**During local development, run `npm run seed` after connecting the database to
+generate tickets, customers, comments, and audit records.**
 **Demo health check:** `https://render-desk.onrender.com/api/health/db`
 
 ## 1.README
@@ -47,6 +49,19 @@ Expected local URLs:
 - Database readiness: `http://localhost:3000/api/health/db`
 - Swagger UI: `http://localhost:3000/api-docs`
 
+Krawl security monitoring is available only inside the authenticated administrator
+workspace at `http://localhost:3000/security`. Krawl is not published on a separate
+host port; the Express server reaches it privately at `http://krawl:5000` through
+Docker Compose. Krawl metrics, attacks, IPs, honeypot records, credentials, and
+paths are read from Krawl's connected database endpoints. The app does not create
+fallback or guessed security data. Staff and customer accounts receive a forbidden
+response from every Krawl API route.
+
+When port `3000` is already used by another local project, start this Compose app
+with `PORT=3001 docker compose up --build -d app` and use
+`http://localhost:3001/security`. Krawl remains private to the Compose network on
+container port `5000`; it is never published as a separate host service.
+
 ### quick test
 
 ```bash
@@ -62,8 +77,8 @@ npm run seed
 ```
 
 Then open `http://localhost:3000/` and use the admin account configured by
-`ADMIN_PASSWORD` (default local value: `admin` / `admin@2026`). From the admin
-workspace, create a staff account and assign a generated ticket. Open
+`ADMIN_PASSWORD` from the untracked `.env` file. From the admin workspace, create
+a staff account and assign a generated ticket. Open
 `http://localhost:3000/customer/login` in a private window to register a
 customer, create a ticket, and test the shared activity flow.
 
@@ -164,7 +179,22 @@ npm run build
 npm audit
 ```
 
-The verified local suite contains 4 Vitest files and 31 passing tests. The build may emit a non-blocking Vite warning when the main browser bundle exceeds 500 kB.
+The verified local suite contains 11 passing test files and 55 passing tests, with
+24 intentionally skipped tests. `npm run lint`, `npm run lint:eslint`, and
+`npm run build` pass. Prettier currently reports style drift in existing Krawl
+files; this does not affect compilation or runtime behavior. The build may emit a
+non-blocking Vite warning when the main browser bundle exceeds 500 kB.
+
+### Verification report
+
+The application was tested against the connected MongoDB database using the
+documented administrator account and temporary uniquely prefixed staff and
+customer accounts. The workflow verified administrator login and staff creation,
+customer registration and login, customer ticket creation, customer comments,
+administrator assignment, staff ticket visibility, staff comments, database
+health, Krawl health, Krawl statistics, and staff denial of Krawl access (`403`).
+Temporary accounts and all related tickets, comments, audit records, and customer
+records were deleted after testing. No pre-existing user records were deleted.
 
 ### Deployment and CI/CD
 
@@ -191,10 +221,17 @@ The Docker image builds the frontend and bundled server with Node.js 24 Alpine. 
 - **Render service name:** `support-ops-desk`
 
 Required Render variables are `MONGO_URI`, `PORT`, `CORS_ORIGIN`,
-`ADMIN_PASSWORD`, `GOOGLE_CLIENT_ID`, and
+`ADMIN_PASSWORD`, `GOOGLE_CLIENT_ID`, `KRAWL_API_URL`,
+`KRAWL_DASHBOARD_PASSWORD`, `KRAWL_DASHBOARD_SECRET_PATH`, and
 `NODE_ENV=production`. Use `https://render-desk.onrender.com` as the production
-`CORS_ORIGIN`. Keep database credentials and OAuth values in Render's environment
-settings, not in this file.
+`CORS_ORIGIN`. Keep database credentials, OAuth values, and Krawl passwords in
+Render's environment settings, not in this file.
+
+Render does not run this repository's Docker Compose stack. Deploy Krawl separately
+as a private service with persistent storage, or use a managed Krawl deployment,
+then set `KRAWL_API_URL` to its private service URL. Do not expose Krawl's dashboard
+directly to the public internet. The Render web service proxies Krawl data only
+through the admin-authenticated `/api/admin/krawl/*` routes.
 
 `GOOGLE_CLIENT_ID` is read by the server at runtime. The frontend reads the
 public client ID from `/api/auth/config`, so Docker does not need a

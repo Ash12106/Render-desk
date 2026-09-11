@@ -75,6 +75,13 @@ export function CustomerPortal() {
         </Link>
       </div>
 
+      {(notifications.error || markRead.error || deleteNotification.error || clearNotifications.error) && (
+        <p role="alert" className="p-4 border border-danger text-danger rounded-md">
+          {(notifications.error || markRead.error || deleteNotification.error || clearNotifications.error)?.message ||
+            'Unable to update notifications.'}
+        </p>
+      )}
+
       {(notifications.data || []).length > 0 && (
         <section className="bg-surface border-2 border-ink rounded-md p-5">
           <div className="flex items-center justify-between gap-4 mb-4">

@@ -1,19 +1,33 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
-const adminPassword = process.env.ADMIN_PASSWORD || 'admin@2026';
+function getAdminPassword() {
+  const password = process.env.ADMIN_PASSWORD;
+  if (!password) throw new Error('Configure ADMIN_PASSWORD before starting the server.');
+  return password;
+}
 
 export async function connectMongoDB() {
   mongoose.set('bufferCommands', false);
-  const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost/mock';
+  const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI;
+  if (!mongoUri) {
+    throw new Error('Configure MONGO_URI or MONGODB_URI before starting the server.');
+  }
 
   try {
-    await mongoose.connect(MONGO_URI);
-    console.log('Successfully connected to MongoDB.');
-    await seedDatabase();
-  } catch (_error) {
-    console.warn('MongoDB not connected — API health will report the database as unavailable');
+    await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 10000 });
+  } catch {
+    throw new Error('Unable to connect to MongoDB. Check database configuration and network access.');
   }
+  const topology = await mongoose.connection.db!.command({ hello: 1 });
+  if (!topology.setName && topology.msg !== 'isdbgrid') {
+    await mongoose.disconnect();
+    throw new Error(
+      'MongoDB must use a replica set or sharded cluster because ticket operations require transactions.',
+    );
+  }
+  console.log('Successfully connected to MongoDB.');
+  await runMigrations();
 }
 
 export function getMongoConnectionState() {
@@ -209,24 +223,9 @@ const migrationSchema = new mongoose.Schema({
 });
 export const Migration = mongoose.model('Migration', migrationSchema);
 
-async function seedDatabase() {
-  await runMigrations();
-
-  const count = await Customer.countDocuments();
-  if (count === 0) {
-    const customers = [
-      { name: 'Maya Chen', email: 'maya.chen@example.com' },
-      { name: 'Jordan Ellis', email: 'jordan.ellis@example.com' },
-      { name: 'Priya Shah', email: 'priya.shah@example.com' },
-      { name: 'Rowan Brooks', email: 'rowan.brooks@example.com' },
-    ];
-    await Customer.insertMany(customers);
-    console.log('Seeded customers.');
-  }
-}
-
 async function runMigrations() {
   console.log('[Migrations] Checking migrations...');
+  const adminPassword = getAdminPassword();
 
   const migrations = [
     {
