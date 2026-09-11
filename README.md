@@ -141,6 +141,26 @@ The expected response is `{"status":"ok"}`. Then open
 `https://render-desk.onrender.com/security` as an administrator. Staff and
 customer accounts receive `403` from the Krawl proxy routes.
 
+If the Support Desk shows **Krawl endpoint not found**, first visit the Krawl
+service root once in a browser to wake a free Render service:
+
+```text
+https://your-krawl-service.onrender.com/
+```
+
+Wait for the Krawl page to load, then retry this health URL:
+
+```text
+https://your-krawl-service.onrender.com/security-dashboard-secret/healthz
+```
+
+If the health URL still fails, check the Krawl service logs. The startup log must
+say `DASHBOARD AVAILABLE AT /security-dashboard-secret`. If it shows a random path,
+the service was deployed from **Existing Image** instead of this repository's
+`Dockerfile.krawl`; recreate or redeploy the Krawl service using that Dockerfile.
+The local Compose service is pinned to Krawl `v2.3.1` so local and Render behavior
+remain aligned.
+
 Krawl's standalone SQLite data requires persistent storage for durable history.
 Free hosting services may restart or sleep services and discard local SQLite data;
 use persistent storage or an external database when retaining threat history is
