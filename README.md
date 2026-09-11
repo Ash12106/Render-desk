@@ -5,7 +5,9 @@ Support Ops Desk is an internal service-ticket management application used by cu
 **Author:** Aashish A. Shirahatti, 3rd-year CSE-AIML student at VVCE, Mysore.
 
 **Live demo:** `https://render-desk.onrender.com`<br>
-**Local administrator:** `Username: admin`, with the password configured by `ADMIN_PASSWORD` in the untracked `.env` file.<br>
+**Default testing administrator:** `Username: admin`, `Password: admin@2026`.<br>
+For Render testing, set `ADMIN_PASSWORD=admin@2026`. Change this password before
+using the application with real users or production data.<br>
 Staff accounts are created by an administrator from staff management. Customer
 accounts are created from the customer registration page. Staff and customer
 passwords are not seeded or hardcoded in the repository.
