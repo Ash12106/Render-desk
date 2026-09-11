@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/src/api';
 import { GoogleLogin } from '@react-oauth/google';
+import { getGoogleClientId } from '@/src/lib/google';
 
 export function CustomerLogin() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -10,7 +11,7 @@ export function CustomerLogin() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  const googleClientId = getGoogleClientId();
 
   const finishLogin = (user: Awaited<ReturnType<typeof api.login>>) => {
     localStorage.setItem('auth_user', JSON.stringify(user));

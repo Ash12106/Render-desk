@@ -3,6 +3,7 @@ import { api } from '@/src/api';
 import { motion } from 'motion/react';
 import { Link, useNavigate } from 'react-router-dom';
 import { GoogleLogin } from '@react-oauth/google';
+import { getGoogleClientId } from '@/src/lib/google';
 
 export function Login() {
   const [username, setUsername] = useState('');
@@ -10,7 +11,7 @@ export function Login() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  const googleClientId = getGoogleClientId();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

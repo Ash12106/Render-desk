@@ -225,6 +225,7 @@ export async function buildApp() {
   app.use(configuredCorsOrigins?.length ? cors({ origin: configuredCorsOrigins }) : cors());
   app.use(
     helmet({
+      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
       contentSecurityPolicy:
         process.env.NODE_ENV === 'production'
           ? {
@@ -315,8 +316,15 @@ export async function buildApp() {
 
         if (accountType === 'staff') {
           const staffAccount = await User.findOne({ email, role: { $in: ['staff', 'admin'] } }).session(session);
-          if (!staffAccount)
-            throw new Error('Ask an administrator to create your staff account before using Google sign-in.');
+          if (!staffAccount) {
+            const error = new Error(
+              'Ask an administrator to create your staff account before using Google sign-in.',
+            ) as Error & {
+              statusCode?: number;
+            };
+            error.statusCode = 403;
+            throw error;
+          }
           staffAccount.googleId = payload.sub;
           await staffAccount.save({ session });
           return staffAccount;
@@ -394,8 +402,8 @@ export async function buildApp() {
         data: null,
       });
     }
-    if (err instanceof Error && 'statusCode' in err && err.statusCode === 409) {
-      return res.status(409).json({ success: false, message: err.message, data: null });
+    if (err instanceof Error && 'statusCode' in err && (err.statusCode === 403 || err.statusCode === 409)) {
+      return res.status(err.statusCode).json({ success: false, message: err.message, data: null });
     }
     console.error(err);
     res.status(500).json({
