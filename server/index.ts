@@ -444,7 +444,11 @@ export async function buildApp() {
           googleId: payload.sub,
           role: { $in: targetRoles },
         } as any).session(session);
-        if (existingGoogleUser) return existingGoogleUser;
+        if (existingGoogleUser) {
+          existingGoogleUser.email = email;
+          await existingGoogleUser.save({ session });
+          return existingGoogleUser;
+        }
 
         if (accountType === 'staff') {
           const staffAccount = await User.findOne({ email, role: { $in: ['staff', 'admin'] } }).session(session);
@@ -458,6 +462,7 @@ export async function buildApp() {
             throw error;
           }
           staffAccount.googleId = payload.sub;
+          staffAccount.email = email;
           await staffAccount.save({ session });
           return staffAccount;
         }
@@ -609,7 +614,11 @@ export async function buildApp() {
         });
       }
 
-      const linkedUser = await User.findByIdAndUpdate(currentUser._id, { googleId: payload.sub }, { new: true });
+      const linkedUser = await User.findByIdAndUpdate(
+        currentUser._id,
+        { googleId: payload.sub, email: payload.email.toLowerCase() },
+        { new: true },
+      );
       if (!linkedUser) return res.status(404).json({ success: false, message: 'Profile not found.', data: null });
       res.json(linkedUser);
     } catch (err) {
