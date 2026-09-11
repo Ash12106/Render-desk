@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/src/api';
 import { useToast } from '@/src/components/ui/Toast';
+import { GoogleLogin } from '@react-oauth/google';
+import { getGoogleClientId } from '@/src/lib/google';
 
 export function StaffProfile() {
   const queryClient = useQueryClient();
@@ -31,6 +33,8 @@ export function StaffProfile() {
   });
   const [editing, setEditing] = useState(false);
   const [details, setDetails] = useState({ displayName: '', email: '', phone: '' });
+  const [linkingGoogle, setLinkingGoogle] = useState(false);
+  const googleClientId = getGoogleClientId();
   useEffect(() => {
     if (!profile.data) return;
     setDetails({
@@ -140,6 +144,36 @@ export function StaffProfile() {
             Team and branch assignments can only be changed by an administrator.
           </p>
         )}
+      </section>
+      <section className="bg-surface border-2 border-ink rounded-md p-6">
+        <h2 className="font-mono text-xs font-bold uppercase tracking-wider mb-2">Google sign-in</h2>
+        <p className="text-sm text-ink-muted mb-4">
+          Link your Google account after signing in with the temporary credentials provided by an administrator.
+        </p>
+        {account.googleId ? (
+          <p className="text-sm font-semibold text-success">Google account linked.</p>
+        ) : googleClientId ? (
+          <GoogleLogin
+            onSuccess={async ({ credential }) => {
+              if (!credential) return showToast('Google did not return a valid credential.', 'error');
+              try {
+                setLinkingGoogle(true);
+                const linkedAccount = await api.linkGoogleAccount(credential);
+                queryClient.setQueryData(['profile'], linkedAccount);
+                localStorage.setItem('auth_user', JSON.stringify(linkedAccount));
+                showToast('Google account linked. You can use Google sign-in next time.');
+              } catch (error: any) {
+                showToast(error.message || 'Could not link Google account.', 'error');
+              } finally {
+                setLinkingGoogle(false);
+              }
+            }}
+            onError={() => showToast('Google sign-in was cancelled or failed.', 'error')}
+          />
+        ) : (
+          <p className="text-sm text-danger">Google sign-in is not configured.</p>
+        )}
+        {linkingGoogle && <p className="mt-3 text-xs text-ink-muted">Linking Google account...</p>}
       </section>
     </div>
   );

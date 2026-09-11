@@ -450,6 +450,41 @@ export async function buildApp() {
     }
   });
 
+  app.post('/api/profile/google-link', mutationLimiter, async (req, res) => {
+    try {
+      const { credential } = googleLoginSchema.pick({ credential: true }).parse(req.body);
+      if (!googleClientId) {
+        return res.status(503).json({ success: false, message: 'Google login is not configured.', data: null });
+      }
+
+      const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: googleClientId });
+      const payload = ticket.getPayload();
+      if (!payload?.sub || !payload.email || payload.email_verified !== true) {
+        return res.status(401).json({ success: false, message: 'Google account could not be verified.', data: null });
+      }
+
+      const currentUser = (req as any).user;
+      if (!['staff', 'admin'].includes(currentUser.role)) {
+        return res.status(403).json({ success: false, message: 'Staff account required.', data: null });
+      }
+
+      const existingLink = await User.findOne({ googleId: payload.sub, _id: { $ne: currentUser._id } });
+      if (existingLink) {
+        return res.status(409).json({
+          success: false,
+          message: 'This Google account is already linked to another account.',
+          data: null,
+        });
+      }
+
+      const linkedUser = await User.findByIdAndUpdate(currentUser._id, { googleId: payload.sub }, { new: true });
+      if (!linkedUser) return res.status(404).json({ success: false, message: 'Profile not found.', data: null });
+      res.json(linkedUser);
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
   app.patch('/api/profile', mutationLimiter, async (req, res) => {
     try {
       const data = z

@@ -162,6 +162,11 @@ export const api = {
     }),
   loginStaffWithGoogle: (credential: string) =>
     fetchJson<User>('/api/auth/google', { method: 'POST', body: JSON.stringify({ credential, accountType: 'staff' }) }),
+  linkGoogleAccount: (credential: string) =>
+    fetchJson<User>('/api/profile/google-link', {
+      method: 'POST',
+      body: JSON.stringify({ credential }),
+    }),
   getProfile: () => fetchJson<User>('/api/profile'),
   updateProfile: (data: { displayName: string; email: string; phone?: string }) =>
     fetchJson<User>('/api/profile', { method: 'PATCH', body: JSON.stringify(data) }),

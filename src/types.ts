@@ -70,6 +70,7 @@ export interface User {
   id: string;
   username: string;
   role: 'admin' | 'staff' | 'customer';
+  googleId?: string;
   customerId?: string;
   displayName?: string;
   email?: string;

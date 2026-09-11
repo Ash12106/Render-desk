@@ -85,6 +85,9 @@ records or replace unavailable values with fake data.
 - **IP analysis:** Krawl tracks suspicious IP activity and reputation categories.
 - **Admin monitoring:** the Support Desk security page displays health, metrics,
   recent attacks, and IP data through the app's admin-only proxy.
+- **Staff Google linking:** staff sign in once with the temporary username and
+  password created by an administrator, open their profile, and link a verified
+  Google account. Future staff sign-ins can use that linked Google account.
 
 #### How to use Krawl locally
 
@@ -105,6 +108,8 @@ records or replace unavailable values with fake data.
 
 4. Open `http://localhost:3000/`, sign in with an administrator account, and
    select **Security**, or open `http://localhost:3000/security` directly.
+  Staff can open **Profile** after their first password sign-in and use **Link
+  Google account** before signing out.
 5. To generate a harmless local probe for testing, request one configured trap:
 
    ```bash
