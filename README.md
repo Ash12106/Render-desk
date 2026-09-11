@@ -72,6 +72,30 @@ records request metadata in its own database, and exposes aggregated security da
 through its authenticated dashboard API. The Support Desk does not invent threat
 records or replace unavailable values with fake data.
 
+#### Krawl request flow
+
+```mermaid
+flowchart LR
+  Visitor[Visitor or scanner] --> Krawl[Krawl honeypot]
+  Krawl --> Inspect{Suspicious request?}
+  Inspect -->|No| Decoy[Serve normal or deceptive response]
+  Inspect -->|Yes| Trap[Match trap, path, user-agent, or attack pattern]
+  Trap --> Store[(Krawl database)]
+  Decoy --> Store
+  Store --> Metrics[Aggregate metrics and IP reputation]
+  Admin[Authenticated administrator] --> Support[Support Desk security page]
+  Support --> Proxy[Admin-only Express proxy]
+  Proxy --> Metrics
+  Proxy --> Health[Krawl health endpoint]
+  Metrics --> Support
+  Health --> Support
+```
+
+Requests are handled by Krawl first. Suspicious paths, scanner-like user agents,
+and attack patterns are recorded in Krawl's database. The Support Desk never reads
+or invents Krawl data directly; it requests health and persisted metrics through
+the admin-only proxy and displays the response to administrators.
+
 #### Krawl features
 
 - **Deception traps:** configured paths such as `/admin`, `/wp-admin`,
