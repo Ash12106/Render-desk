@@ -99,6 +99,9 @@ Copy `.env.example` to `.env`. Use placeholders or a secret manager for shared e
 | `ADMIN_PASSWORD`        | Startup-created admin password                    | `change-me-locally`                     | Yes; change before sharing   |
 | `GOOGLE_CLIENT_ID`      | Backend Google ID-token audience                  | Empty                                   | No                           |
 | `VITE_GOOGLE_CLIENT_ID` | Frontend Google OAuth client ID; build-time value | Empty                                   | No                           |
+| `KRAWL_API_URL`         | Private Krawl service URL                         | `http://krawl:5000`                     | Required for Krawl           |
+| `KRAWL_DASHBOARD_PASSWORD` | Krawl dashboard service password              | Secret                                  | Required for Krawl           |
+| `KRAWL_DASHBOARD_SECRET_PATH` | Krawl dashboard secret path                 | `/security-dashboard-secret`            | Required for Krawl           |
 | `NODE_ENV`              | Runtime mode                                      | `development` or `production`           | No                           |
 
 For local Google sign-in, use the same Google OAuth client ID for `GOOGLE_CLIENT_ID` and
@@ -220,12 +223,14 @@ The Docker image builds the frontend and bundled server with Node.js 24 Alpine. 
 - **Swagger URL:** `https://render-desk.onrender.com/api-docs`
 - **Render service name:** `support-ops-desk`
 
-Required Render variables are `MONGO_URI`, `PORT`, `CORS_ORIGIN`,
+Required Render variables are `MONGO_URI`, `CORS_ORIGIN`,
 `ADMIN_PASSWORD`, `GOOGLE_CLIENT_ID`, `KRAWL_API_URL`,
 `KRAWL_DASHBOARD_PASSWORD`, `KRAWL_DASHBOARD_SECRET_PATH`, and
 `NODE_ENV=production`. Use `https://render-desk.onrender.com` as the production
 `CORS_ORIGIN`. Keep database credentials, OAuth values, and Krawl passwords in
 Render's environment settings, not in this file.
+
+Do not set `PORT` manually on Render; Render provides the port to the container.
 
 Render does not run this repository's Docker Compose stack. Deploy Krawl separately
 as a private service with persistent storage, or use a managed Krawl deployment,
