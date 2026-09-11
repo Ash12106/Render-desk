@@ -48,6 +48,13 @@ function createMailer() {
   return nodemailer.createTransport({ host, port, secure: process.env.SMTP_SECURE === 'true', auth: { user, pass } });
 }
 
+function escapeHtml(value: string) {
+  return value.replace(
+    /[&<>"']/g,
+    (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character] || character,
+  );
+}
+
 const passwordResetRequestSchema = z.object({ email: z.string().trim().email() });
 const passwordResetSchema = z.object({
   token: z.string().min(32),
@@ -316,13 +323,37 @@ export async function buildApp() {
       });
 
       const resetUrl = `${appBaseUrl}/reset-password?token=${rawToken}`;
+      const safeResetUrl = escapeHtml(resetUrl);
       try {
         await createMailer().sendMail({
           from: passwordResetEmail,
           to: normalizedEmail,
           subject: 'Reset your Support Desk password',
           text: `Reset your Support Desk password using this link (valid for 1 hour): ${resetUrl}`,
-          html: `<p>Reset your Support Desk password using the link below. It expires in 1 hour.</p><p><a href="${resetUrl}">Reset password</a></p>`,
+          html: `<!doctype html>
+<html lang="en">
+  <body style="margin:0;background:#f4f0e8;color:#17202b;font-family:Arial,Helvetica,sans-serif;">
+    <div style="padding:40px 16px;">
+      <div style="max-width:560px;margin:0 auto;background:#fffdf8;border:2px solid #17202b;border-radius:8px;box-shadow:8px 8px 0 #17202b;overflow:hidden;">
+        <div style="padding:28px 32px;border-bottom:2px solid #17202b;background:#f4f0e8;">
+          <p style="margin:0 0 10px;color:#5c6673;font-family:monospace;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">Support Desk</p>
+          <h1 style="margin:0;font-size:28px;line-height:1.2;">Reset your password</h1>
+        </div>
+        <div style="padding:32px;">
+          <p style="margin:0 0 18px;font-size:16px;line-height:1.6;">We received a request to reset the password for your Support Desk account.</p>
+          <p style="margin:0 0 28px;font-size:14px;line-height:1.6;color:#5c6673;">This secure link expires in 1 hour and can only be used once.</p>
+          <a href="${safeResetUrl}" style="display:inline-block;padding:14px 22px;background:#17202b;color:#ffffff;text-decoration:none;border-radius:6px;font-family:monospace;font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Reset password</a>
+          <div style="margin-top:30px;padding-top:20px;border-top:1px solid #d8d2c8;">
+            <p style="margin:0 0 8px;color:#5c6673;font-family:monospace;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Button not working?</p>
+            <p style="margin:0;word-break:break-all;font-size:12px;line-height:1.5;"><a href="${safeResetUrl}" style="color:#17202b;">${safeResetUrl}</a></p>
+          </div>
+          <p style="margin:28px 0 0;color:#5c6673;font-size:12px;line-height:1.5;">If you did not request this reset, you can safely ignore this email.</p>
+        </div>
+      </div>
+      <p style="max-width:560px;margin:22px auto 0;color:#5c6673;text-align:center;font-family:monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;">Secure account access</p>
+    </div>
+  </body>
+</html>`,
         });
       } catch (mailError) {
         await PasswordResetToken.deleteOne({ tokenHash });
