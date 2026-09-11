@@ -1,5 +1,24 @@
 services:
   - type: web
+    name: krawl-honeypot
+    env: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /security-dashboard-secret/healthz
+    dockerfilePath: ./Dockerfile.krawl
+    envVars:
+      - key: KRAWL_MODE
+        value: standalone
+      - key: KRAWL_PORT
+        value: 5000
+      - key: CONFIG_LOCATION
+        value: /app/config.yaml
+      - key: KRAWL_DASHBOARD_PASSWORD
+        sync: false
+      - key: KRAWL_DASHBOARD_SECRET_PATH
+        value: /security-dashboard-secret
+
+  - type: web
     name: support-ops-desk
     env: docker
     plan: free

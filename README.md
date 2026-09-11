@@ -340,11 +340,14 @@ Render's environment settings, not in this file.
 
 Do not set `PORT` manually on Render; Render provides the port to the container.
 
-Render does not run this repository's Docker Compose stack. Deploy Krawl separately
-as a private service with persistent storage, or use a managed Krawl deployment,
-then set `KRAWL_API_URL` to its private service URL. Do not expose Krawl's dashboard
-directly to the public internet. The Render web service proxies Krawl data only
-through the admin-authenticated `/api/admin/krawl/*` routes.
+Render does not run this repository's Docker Compose stack. Deploy Krawl as a
+second Render web service from this same GitHub repository using `Dockerfile.krawl`
+and port `5000`, or use a managed Krawl deployment. The repository Dockerfile
+copies `krawl-config.yaml` into the image so the dashboard path stays
+`/security-dashboard-secret` instead of changing randomly on restart. Then set
+`KRAWL_API_URL` to the deployed Krawl service URL. Do not expose Krawl's dashboard
+directly to the public internet. The Support Desk proxies Krawl data only through
+the admin-authenticated `/api/admin/krawl/*` routes.
 
 `KRAWL_API_URL` must be the Krawl service URL, for example
 `https://krawl-service.example.com`; do not set it to
