@@ -66,6 +66,13 @@ services:
       MONGO_URI: mongodb://mongo:27017/support-ops?replicaSet=rs0
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
       KRAWL_API_URL: http://krawl:5000
       KRAWL_DASHBOARD_PASSWORD: ${KRAWL_DASHBOARD_PASSWORD:?KRAWL_DASHBOARD_PASSWORD must be set}
       KRAWL_DASHBOARD_SECRET_PATH: ${KRAWL_DASHBOARD_SECRET_PATH:-/security-dashboard-secret}
