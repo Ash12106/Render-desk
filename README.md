@@ -300,6 +300,13 @@ Copy `.env.example` to `.env`. Use placeholders or a secret manager for shared e
 | `KRAWL_API_URL`         | Private Krawl service URL                         | `http://krawl:5000`                     | Required for Krawl           |
 | `KRAWL_DASHBOARD_PASSWORD` | Krawl dashboard service password              | Secret                                  | Required for Krawl           |
 | `KRAWL_DASHBOARD_SECRET_PATH` | Krawl dashboard secret path                 | `/security-dashboard-secret`            | Required for Krawl           |
+| `APP_BASE_URL`          | Public base URL used in customer links and email | `http://localhost:3000`              | Yes for password-reset/email links |
+| `SMTP_HOST`             | SMTP provider host                              | `smtp.example.com`                     | Required to deliver customer email |
+| `SMTP_PORT`             | SMTP provider port                              | `587`                                  | Required with SMTP           |
+| `SMTP_SECURE`           | Use TLS from connection start                   | `false`                                | Required with SMTP           |
+| `SMTP_USER`             | SMTP provider username                          | `your-smtp-user`                       | Required with SMTP           |
+| `SMTP_PASSWORD`         | SMTP provider password                          | `your-smtp-password`                   | Required with SMTP           |
+| `SMTP_FROM`             | Verified sender address                         | `support@example.com`                  | Required with SMTP           |
 | `NODE_ENV`              | Runtime mode                                      | `development` or `production`           | No                           |
 
 For local Google sign-in, use the same Google OAuth client ID for `GOOGLE_CLIENT_ID` and
@@ -498,14 +505,25 @@ but each sees only the tools needed for their job.
 
 | User | What they need | What the application lets them do |
 | --- | --- | --- |
-| **Customer** | A simple place to ask for help and follow progress | Register or sign in, create tickets, attach files, add comments, view their own ticket history and notifications, and maintain their profile. |
-| **Support staff** | A focused queue that shows assigned work | View assigned tickets, update supported lifecycle states and activity state, add comments, inspect customer context, download attachments, and set availability. |
-| **Administrator** | Oversight without doing staff work on their behalf | Create and manage staff, roles, teams, and branches; inspect workload; assign or restore tickets; and view the security dashboard. |
+| **Customer** | A simple place to ask for help and follow progress | Register or sign in, create tickets, attach files, add comments, view their own ticket history and notifications, reopen an eligible resolved ticket once, rate a resolved ticket, browse the help centre, and maintain their profile. |
+| **Support staff** | A focused queue that shows assigned work | View assigned tickets, update supported lifecycle states and activity state, add customer-visible comments and private notes, use approved canned replies, escalate within the defined rules, inspect customer context, download attachments, and set availability. |
+| **Administrator** | Oversight and workflow governance | Create and manage staff, roles, teams, and branches; inspect workload; assign or restore tickets; manage canned replies and knowledge-base articles in the Library; review CSAT; and view the security dashboard. |
 
 Authentication identifies the account, while role middleware on the API decides
 whether the requested operation is permitted. For example, a customer cannot
 read another customer's ticket and a staff member cannot use the administrator
 security endpoints simply by navigating to their URL.
+
+#### Separate customer and staff sign-in
+
+Password sign-in is intentionally split into two entry points. The customer
+portal calls `POST /api/customer-auth/login`, which accepts only `customer`
+accounts. The staff/admin sign-in calls `POST /api/auth/login`, which accepts
+only `staff` and `admin` accounts. A valid password with the wrong role still
+receives `403`; it is never silently signed into the other portal. Client route
+guards keep each role in its intended workspace, and server-side middleware
+remains the final protection for every API request. Google sign-in follows the
+same account-type choice.
 
 ### Support workflow
 
@@ -544,14 +562,19 @@ still providing a controlled route for a genuinely unresolved issue.
 When a staff member changes a status with notification enabled, the customer
 receives an in-app notification and, only when valid SMTP credentials and a
 real customer email are configured, a status email. The server never sends to
-the placeholder demo address. The UI also subscribes to authenticated SSE
-events and refetches only data the signed-in person is allowed to read; normal
-query polling remains a fallback for networks that block streaming.
+the placeholder demo address. The UI also subscribes to authenticated SSE events
+for comments, notifications, and assignment changes, then refetches only data
+the signed-in person is allowed to read. Normal query polling remains a fallback
+for networks that block streaming.
 
 After resolution or closure, customers can submit one 1–5 satisfaction rating
 with an optional comment. Administrators can read aggregate satisfaction results
-at `GET /api/admin/reports/customer-satisfaction`. Published help-centre articles
-are available at `/help` and are managed at `/api/admin/knowledge-base`.
+at `/reports/customer-satisfaction` (backed by
+`GET /api/admin/reports/customer-satisfaction`). Published help-centre articles
+are available at `/help`; administrators manage those articles and canned
+replies on the `/workflow-library` screen. The server validates article title,
+summary, and content lengths before saving, so a too-short draft receives a
+clear field-level message instead of being published accidentally.
 
 ```mermaid
 flowchart LR
@@ -602,7 +625,10 @@ Core modules:
 - `server/src/index.ts`: Express API, middleware, Swagger, static frontend serving, and startup migrations.
 - `server/models/mongo.ts`: MongoDB connection, schemas, migrations, and transactions.
 - `server/src/notifications.ts`: customer notification records.
+- `server/src/realtime/sse.ts`: authenticated, role-scoped real-time events.
 - `server/controllers/ticketStatusController.ts`: ticket lifecycle transition rules.
+- `client/src/routes/WorkflowLibrary.tsx`: administrator workspace for canned replies and help articles.
+- `client/src/hooks/useWorkflowEvents.ts`: SSE subscription and safe query refresh.
 - `server/src/*.test.ts` and `client/src/routes/TicketsDashboard.test.tsx`: API, notification, status, and dashboard tests.
 - `Dockerfile` and `docker-compose.yml`: production image and MongoDB replica-set deployment.
 
@@ -610,10 +636,10 @@ Core modules:
 
 | Stakeholder               | Main features                                                                                                                                                                              | Value delivered                                                                     |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| **Customer**              | Register and sign in, create support tickets, view ticket status, read notifications, exchange comments, manage profile, and use Google sign-in when configured.                           | A self-service support channel with transparent progress and conversation history.  |
-| **Support staff**         | View assigned work, search and filter tickets, update lifecycle and activity status, comment, inspect customer context, download attachments, and publish availability.                    | A focused workspace for resolving assigned requests and keeping customers informed. |
-| **Administrator**         | Create staff/admin accounts, manage roles, teams, branches and profile details, review workload metrics, assign tickets to available staff, bulk-assign work, and restore deleted tickets. | Operational control, workload balancing, and recoverability.                        |
-| **Application/API**       | Role-based authorization, Zod validation, rate limiting, Helmet security headers, transactional writes, audit logs, notifications, health checks, and Swagger documentation.               | Consistent, observable, and safer service behavior.                                 |
+| **Customer**              | Customer-only sign-in, tickets, comments, notifications, one controlled reopen, CSAT feedback, profile, Google sign-in when configured, and the published help centre.                    | A self-service support channel with transparent progress and fewer repetitive requests. |
+| **Support staff**         | Assigned-work queue, search/filter, lifecycle and activity updates, public comments, private notes, approved canned replies, SLA visibility, controlled escalation, and availability.       | A focused workspace for resolving assigned requests and keeping customers informed. |
+| **Administrator**         | Staff/admin management, workload and bulk assignment, restore, workflow Library, CSAT reporting, roles/teams/branches, and security dashboard.                                         | Operational control, workflow governance, and recoverability.                        |
+| **Application/API**       | Role-based authorization, scoped login, Zod validation, rate limiting, Helmet, transactional writes, audit logs, in-app/SMTP notifications, SSE, health checks, and Swagger.             | Consistent, observable, and safer service behavior.                                 |
 | **Developer** | Docker Compose startup, database seed script, automated tests, formatting/lint checks, health endpoint, API documentation, and repeatable smoke-test commands.                             | Fast reproduction .                                    |
 
 ### End-to-end stakeholder flow
@@ -656,7 +682,7 @@ npm audit
 ```
 
 Last verified on 2026-09-12: the local suite contains **13 passing test files and
-61 passing tests**, with **24 intentionally skipped integration tests** when no
+61 passing tests**, with **25 intentionally skipped integration tests** when no
 integration database is configured. `npm run lint` and `npm run build` pass. The
 build may emit a non-blocking Vite warning when the main browser bundle exceeds
 500 kB.
