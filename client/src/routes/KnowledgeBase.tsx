@@ -30,25 +30,27 @@ export function KnowledgeBase() {
   return (
     <main className="min-h-screen bg-canvas px-4 py-10 text-ink">
       <div className="mx-auto max-w-4xl space-y-8">
-        <header className="flex flex-col gap-5 border-b-2 border-ink pb-7 sm:flex-row sm:items-end sm:justify-between">
+        <header className="border-b-2 border-ink pb-7">
+          <div className="mb-5">
+            {currentUser ? (
+              <Link
+                className="inline-flex items-center gap-1 font-mono text-xs font-bold uppercase underline"
+                to={currentUser.role === 'customer' ? '/customer' : '/tickets'}
+              >
+                <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+                Back to {currentUser.role === 'customer' ? 'customer portal' : 'ticket queue'}
+              </Link>
+            ) : (
+              <Link className="font-mono text-xs font-bold uppercase underline" to="/customer/login">
+                Customer sign in
+              </Link>
+            )}
+          </div>
           <div>
             <p className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-ink-muted">Support centre</p>
             <h1 className="mt-2 text-4xl font-sans font-black">How can we help?</h1>
             <p className="mt-2 text-ink-muted">Practical answers for common support questions.</p>
           </div>
-          {currentUser ? (
-            <Link
-              className="inline-flex items-center gap-1 font-mono text-xs font-bold uppercase underline"
-              to={currentUser.role === 'customer' ? '/customer' : '/tickets'}
-            >
-              <ArrowLeft aria-hidden="true" className="h-4 w-4" />
-              Back to {currentUser.role === 'customer' ? 'customer portal' : 'ticket queue'}
-            </Link>
-          ) : (
-            <Link className="font-mono text-xs font-bold uppercase underline" to="/customer/login">
-              Customer sign in
-            </Link>
-          )}
         </header>
         <label className="relative block" htmlFor="article-search">
           <span className="sr-only">Search help articles</span>
