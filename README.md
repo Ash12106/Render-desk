@@ -17,6 +17,32 @@ generate tickets, customers, comments, and audit records.**
 
 ## 1.README
 
+### Project layout
+
+```text
+support-ops-desk/
+├── client/                 # React + Vite application
+│   ├── public/
+│   ├── src/
+│   └── package.json
+├── server/                 # Express + MongoDB application
+│   ├── src/
+│   ├── routes/
+│   ├── controllers/
+│   ├── models/
+│   └── package.json
+├── package.json            # npm workspaces commands
+└── README.md
+```
+
+Run the full application from the repository root with `npm run dev`. Use
+`npm run dev:client` when only the Vite client is needed. The production server
+serves the built `client/dist` directory, so the deployed app remains a single
+web service. The server workspace explicitly loads the repository-root `.env`
+when running `npm run dev`, `npm run start`, or `npm run seed`.
+When the local development port is already in use (for example, by Docker),
+`npm run dev` automatically starts on the next port and prints its URL.
+
 ### Prerequisites
 
 - Node.js `>= 22.x` for local development. The production image uses Node.js `24`.
@@ -44,12 +70,30 @@ docker compose ps
 curl -fsS http://localhost:3000/api/health/db
 ```
 
+### Running the development server alongside Docker
+
+The Compose application publishes port `3000`. If it is already running, the
+workspace development server automatically uses `3001` instead of exiting. The
+terminal prints the selected URL; open that URL for the workspace version.
+
+```text
+Port 3000 is already in use. Starting the development server on 3001 instead.
+Server running on http://localhost:3001
+```
+
+Use `PORT=3002 npm run dev` to choose a different port explicitly. Set
+`PORT_FALLBACK_DISABLED=true` only when an occupied port should be treated as
+an error. The Docker service remains available on its published port.
+
 Expected local URLs:
 
 - Staff/admin login: `http://localhost:3000/`
 - Customer login and registration: `http://localhost:3000/customer/login`
 - Database readiness: `http://localhost:3000/api/health/db`
 - Swagger UI: `http://localhost:3000/api-docs`
+
+When the development server falls back to `3001`, replace `3000` with `3001`
+in the URLs above.
 
 Krawl security monitoring is available only inside the authenticated administrator
 workspace at `http://localhost:3000/security`. Krawl is not published on a separate
@@ -275,13 +319,13 @@ flowchart LR
 
 Core modules:
 
-- `src/`: React routes, dashboards, customer portal, ticket forms, profiles, and shared UI.
-- `src/api/index.ts`: browser API client.
-- `server/index.ts`: Express API, middleware, Swagger, static frontend serving, and startup migrations.
-- `server/mongo.ts`: MongoDB connection, schemas, migrations, and transactions.
-- `server/notifications.ts`: customer notification records.
-- `server/status.ts`: lifecycle transition rules.
-- `server/*.test.ts` and `src/routes/TicketsDashboard.test.tsx`: API, notification, status, and dashboard tests.
+- `client/src/`: React routes, dashboards, customer portal, ticket forms, profiles, and shared UI.
+- `client/src/api/index.ts`: browser API client.
+- `server/src/index.ts`: Express API, middleware, Swagger, static frontend serving, and startup migrations.
+- `server/models/mongo.ts`: MongoDB connection, schemas, migrations, and transactions.
+- `server/src/notifications.ts`: customer notification records.
+- `server/controllers/ticketStatusController.ts`: ticket lifecycle transition rules.
+- `server/src/*.test.ts` and `client/src/routes/TicketsDashboard.test.tsx`: API, notification, status, and dashboard tests.
 - `Dockerfile` and `docker-compose.yml`: production image and MongoDB replica-set deployment.
 
 ### Application features by stakeholder
@@ -364,7 +408,7 @@ docker compose ps
 curl -fsS http://localhost:3000/api/health/db
 ```
 
-The Docker image builds the frontend and bundled server with Node.js 24 Alpine. The runtime serves `dist/server.cjs` on port `3000`. MongoDB 7 runs as a single-node replica set with the persistent `mongo_data` volume. Before public exposure, add HTTPS, a reverse proxy or managed platform, restricted `CORS_ORIGIN`, and deployment-secret injection.
+The Docker image builds the frontend and bundled server with Node.js 24 Alpine. The runtime serves `server/dist/index.cjs` and the built `client/dist` files on port `3000`. MongoDB 7 runs as a single-node replica set with the persistent `mongo_data` volume. Before public exposure, add HTTPS, a reverse proxy or managed platform, restricted `CORS_ORIGIN`, and deployment-secret injection.
 
 ### Render deployment
 
