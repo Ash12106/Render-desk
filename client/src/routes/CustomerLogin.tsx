@@ -13,7 +13,7 @@ export function CustomerLogin() {
   const navigate = useNavigate();
   const googleClientId = getGoogleClientId();
 
-  const finishLogin = (user: Awaited<ReturnType<typeof api.login>>) => {
+  const finishLogin = (user: Awaited<ReturnType<typeof api.loginCustomer>>) => {
     localStorage.setItem('auth_user', JSON.stringify(user));
     navigate('/customer');
     window.location.reload();
@@ -26,7 +26,7 @@ export function CustomerLogin() {
     try {
       const user =
         mode === 'login'
-          ? await api.login({ username: form.username, password: form.password })
+          ? await api.loginCustomer({ username: form.username, password: form.password })
           : await api.registerCustomer(form);
       finishLogin(user);
     } catch (err: any) {

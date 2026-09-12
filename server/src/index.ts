@@ -81,6 +81,10 @@ const passwordResetSchema = z.object({
   token: z.string().min(32),
   password: z.string().min(8, 'Password must be at least 8 characters.'),
 });
+const passwordLoginSchema = z.object({
+  username: z.string().trim().min(1),
+  password: z.string().min(1),
+});
 
 const ticketSchema = z.object({
   customerId: z.string().min(1, 'Choose a customer.'),
@@ -492,15 +496,10 @@ export async function buildApp() {
     }
   });
 
-  // POST /api/auth/login
-  app.post('/api/auth/login', async (req, res) => {
+  const passwordLogin = (allowedRoles: Array<'admin' | 'staff' | 'customer'>, signInLabel: string) =>
+    async (req: express.Request, res: express.Response) => {
     try {
-      const { username, password } = z
-        .object({
-          username: z.string().trim().min(1),
-          password: z.string().min(1),
-        })
-        .parse(req.body);
+      const { username, password } = passwordLoginSchema.parse(req.body);
       const user = await User.findOne({ username });
       if (!user) {
         return res.status(401).json({ success: false, message: 'Invalid credentials', data: null });
@@ -509,11 +508,23 @@ export async function buildApp() {
       if (!isMatch) {
         return res.status(401).json({ success: false, message: 'Invalid credentials', data: null });
       }
+      if (!allowedRoles.includes(user.role as 'admin' | 'staff' | 'customer')) {
+        return res.status(403).json({
+          success: false,
+          message: `This sign-in is for ${signInLabel} accounts only.`,
+          data: null,
+        });
+      }
       res.json(user);
     } catch (err) {
       handleApiError(res, req, err);
     }
-  });
+  };
+
+  // Keep customer and staff credentials on separate entry points. Role checks
+  // occur before a browser session is returned, not only after navigation.
+  app.post('/api/customer-auth/login', mutationLimiter, passwordLogin(['customer'], 'customer'));
+  app.post('/api/auth/login', mutationLimiter, passwordLogin(['admin', 'staff'], 'staff or administrator'));
 
   // Authenticate API requests before mounting routes that use the current user.
   app.use('/api', authMiddleware);

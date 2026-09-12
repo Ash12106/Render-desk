@@ -79,6 +79,24 @@ describe.skipIf(!testMongoUri)('Support Desk API (dedicated test database)', () 
     expect(res.body.id).toBe(token);
   });
 
+  it('keeps customer and staff password sign-in entry points separate', async () => {
+    const customerLogin = await request(app)
+      .post('/api/customer-auth/login')
+      .send({ username: customerUser.username, password: 'customerpass' });
+    expect(customerLogin.status).toBe(200);
+    expect(customerLogin.body.role).toBe('customer');
+
+    const staffOnCustomerPage = await request(app)
+      .post('/api/customer-auth/login')
+      .send({ username: staffUsername, password: 'testpass' });
+    expect(staffOnCustomerPage.status).toBe(403);
+
+    const customerOnStaffPage = await request(app)
+      .post('/api/auth/login')
+      .send({ username: customerUser.username, password: 'customerpass' });
+    expect(customerOnStaffPage.status).toBe(403);
+  });
+
   it('reports database readiness', async () => {
     const res = await request(app).get('/api/health/db');
     expect(res.status).toBe(200);

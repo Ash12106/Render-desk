@@ -161,6 +161,8 @@ export const api = {
       body: JSON.stringify(data),
     });
   },
+  loginCustomer: (data: { username: string; password: string }) =>
+    fetchJson<User>('/api/customer-auth/login', { method: 'POST', body: JSON.stringify(data) }),
   requestPasswordReset: (email: string) =>
     fetchJson<{ message: string }>('/api/auth/forgot-password', {
       method: 'POST',
