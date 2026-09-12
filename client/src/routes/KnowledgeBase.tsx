@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Search } from 'lucide-react';
+import { ArrowLeft, BookOpen, Search } from 'lucide-react';
 import { api } from '@/src/api';
 import { KnowledgeBaseArticle } from '@/src/types';
+import { getStoredAuthUser } from '@/src/lib/auth';
 
 export function KnowledgeBase() {
+  const currentUser = getStoredAuthUser();
   const [search, setSearch] = useState('');
   const [articles, setArticles] = useState<KnowledgeBaseArticle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +36,19 @@ export function KnowledgeBase() {
             <h1 className="mt-2 text-4xl font-sans font-black">How can we help?</h1>
             <p className="mt-2 text-ink-muted">Practical answers for common support questions.</p>
           </div>
-          <Link className="font-mono text-xs font-bold uppercase underline" to="/customer/login">Customer sign in</Link>
+          {currentUser ? (
+            <Link
+              className="inline-flex items-center gap-1 font-mono text-xs font-bold uppercase underline"
+              to={currentUser.role === 'customer' ? '/customer' : '/tickets'}
+            >
+              <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+              Back to {currentUser.role === 'customer' ? 'customer portal' : 'ticket queue'}
+            </Link>
+          ) : (
+            <Link className="font-mono text-xs font-bold uppercase underline" to="/customer/login">
+              Customer sign in
+            </Link>
+          )}
         </header>
         <label className="relative block" htmlFor="article-search">
           <span className="sr-only">Search help articles</span>
