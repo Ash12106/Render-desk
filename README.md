@@ -305,16 +305,240 @@ For local Google sign-in, use the same Google OAuth client ID for `GOOGLE_CLIENT
 exist with the same Google account email; customer Google sign-in can create or link a
 customer account automatically.
 
+## System design
+
+This is deliberately a straightforward two-part application: one React client
+for people using the desk and one Express server that owns the business rules
+and data. Keeping those responsibilities separate means a screen can change
+without bypassing access checks, and a database change is made in one place
+instead of being scattered through the UI.
+
 ### Architecture overview
 
 ```mermaid
 flowchart LR
-    Browser[Customer / staff / admin browser] --> Frontend[React + Vite frontend]
-    Frontend --> API[Express API]
-    API --> Auth[Authentication and role middleware]
-    API --> Mongo[(MongoDB 7 replica set)]
-    API --> Audit[Audit logs and notifications]
-    API --> Swagger[Swagger UI]
+    Customer[Customer browser]
+    Staff[Staff browser]
+    Admin[Administrator browser]
+
+    subgraph Client[client — React + Vite]
+      Router[Role-aware routes and screens]
+      ApiClient[API client and stored session]
+      Router --> ApiClient
+    end
+
+    subgraph Server[server — Express]
+      Api[API routes]
+      Guard[Authentication, role checks, validation and rate limits]
+      Services[Ticket, notification and status services]
+      Api --> Guard --> Services
+    end
+
+    Mongo[(MongoDB replica set)]
+    Krawl[Krawl security service]
+    Google[Google identity service]
+    Mail[SMTP provider]
+
+    Customer --> Router
+    Staff --> Router
+    Admin --> Router
+    ApiClient -->|HTTPS / JSON| Api
+    Services --> Mongo
+    Services -. optional admin-only proxy .-> Krawl
+    Guard -. optional sign-in verification .-> Google
+    Services -. password-reset email .-> Mail
+```
+
+The production server serves the built client files and the API from the same
+public origin. Locally, Vite is attached as Express middleware so the browser
+still talks to a single application address.
+
+### Client design
+
+The `client/` workspace is the user-facing React application.
+
+| Area | Responsibility | Why it lives here |
+| --- | --- | --- |
+| `client/src/routes/` | Login, dashboards, ticket detail, customer portal, profiles, and staff management screens | Routes describe what each type of user can see and do. |
+| `client/src/components/` | Shared layouts, forms, badges, dialogs, toast messages, and the admin security dashboard | Reusable UI keeps interaction and visual behavior consistent. |
+| `client/src/api/index.ts` | Adds the current account identifier and turns API failures into useful UI errors | Screens should not each need to understand request details. |
+| `client/src/lib/` | Session storage, Google configuration, formatting, and small shared helpers | Browser-specific concerns stay out of feature screens. |
+| `client/src/hooks/` | Query hooks for security-monitoring views | Remote-data behaviour is kept close to the feature that uses it. |
+
+The client never decides whether someone is allowed to update a ticket. It
+only presents the actions that make sense for the signed-in role; the server
+always enforces the real permission.
+
+### Server design
+
+The `server/` workspace is the source of truth for permissions, workflows, and
+data changes.
+
+| Area | Responsibility | Examples |
+| --- | --- | --- |
+| `server/src/index.ts` | Builds Express, mounts middleware and routes, serves the client, starts migrations | CORS, Helmet, rate limiting, Swagger, health endpoint |
+| `server/routes/` | Keeps feature-specific HTTP route handling separate | Admin-only Krawl proxy |
+| `server/controllers/` | Holds business rules that should not depend on HTTP | Allowed ticket status transitions |
+| `server/models/` | Defines Mongoose schemas, indexes, migrations, and transactions | Users, tickets, audit records, notifications |
+| `server/src/notifications.ts` | Records and simulates customer status-change notifications | A ticket update creates a traceable notification |
+| `server/src/*.test.ts` | Tests API contracts, error conditions, data setup, and integrations | Database configuration and lifecycle rules |
+
+Every write is validated with Zod before it reaches MongoDB. Related writes
+such as ticket creation, status updates, archival, and restoration are grouped
+in MongoDB transactions; that is why the local database must run as a replica
+set.
+
+### Database design
+
+MongoDB stores documents, but the application treats their references as clear
+relationships. `Ticket` is the centre of the model: it connects the customer
+who needs help, the staff member assigned to help, and the timeline of what
+happened.
+
+```mermaid
+erDiagram
+    USER {
+        ObjectId id PK
+        string username UK
+        string role
+        ObjectId customerId FK
+        string email
+        boolean isAvailable
+    }
+    CUSTOMER {
+        ObjectId id PK
+        string name
+        string email
+        string customerCode UK
+    }
+    TICKET {
+        ObjectId id PK
+        ObjectId customerId FK
+        ObjectId assignedTo FK
+        string title
+        string priority
+        string status
+        string activityStatus
+        datetime dueDate
+    }
+    COMMENT {
+        ObjectId id PK
+        ObjectId ticketId FK
+        string author
+        string content
+    }
+    AUDIT_LOG {
+        ObjectId id PK
+        ObjectId ticketId FK
+        string action
+        string author
+    }
+    NOTIFICATION {
+        ObjectId id PK
+        ObjectId customerId FK
+        ObjectId ticketId FK
+        string type
+        datetime readAt
+    }
+    PASSWORD_RESET_TOKEN {
+        ObjectId id PK
+        ObjectId userId FK
+        string tokenHash UK
+        datetime expiresAt
+    }
+    DELETED_TICKET {
+        ObjectId id PK
+        ObjectId customerId FK
+        ObjectId assignedTo FK
+        string deletedBy
+    }
+
+    CUSTOMER o|--o| USER : "may sign in through"
+    CUSTOMER ||--o{ TICKET : "opens"
+    USER o|--o{ TICKET : "is assigned"
+    TICKET ||--o{ COMMENT : "has"
+    TICKET ||--o{ AUDIT_LOG : "records"
+    CUSTOMER ||--o{ NOTIFICATION : "receives"
+    TICKET ||--o{ NOTIFICATION : "causes"
+    USER ||--o{ PASSWORD_RESET_TOKEN : "uses"
+    CUSTOMER ||--o{ DELETED_TICKET : "owns archived copy"
+    USER o|--o{ DELETED_TICKET : "was assigned"
+```
+
+`DeletedTicket` is a recoverable archive, not an active ticket. When an
+administrator deletes a ticket, the app archives the ticket and its related
+history inside a transaction. Restoring reverses that process so a mistaken
+deletion does not silently destroy support history. Password-reset tokens store
+only a hash and expire automatically.
+
+### User design and permissions
+
+The application has three human-facing roles. They share the same ticket data,
+but each sees only the tools needed for their job.
+
+| User | What they need | What the application lets them do |
+| --- | --- | --- |
+| **Customer** | A simple place to ask for help and follow progress | Register or sign in, create tickets, attach files, add comments, view their own ticket history and notifications, and maintain their profile. |
+| **Support staff** | A focused queue that shows assigned work | View assigned tickets, update supported lifecycle states and activity state, add comments, inspect customer context, download attachments, and set availability. |
+| **Administrator** | Oversight without doing staff work on their behalf | Create and manage staff, roles, teams, and branches; inspect workload; assign or restore tickets; and view the security dashboard. |
+
+Authentication identifies the account, while role middleware on the API decides
+whether the requested operation is permitted. For example, a customer cannot
+read another customer's ticket and a staff member cannot use the administrator
+security endpoints simply by navigating to their URL.
+
+### Support workflow
+
+```mermaid
+flowchart TD
+    Start([Customer needs help]) --> Login{Signed in?}
+    Login -- No --> Register[Register or sign in]
+    Login -- Yes --> NewTicket[Create ticket and optional attachments]
+    Register --> NewTicket
+    NewTicket --> Validate[Server validates request and starts transaction]
+    Validate --> Created[Ticket and audit entry are saved]
+    Created --> Queue[Ticket appears in the operational queue]
+    Queue --> Assign[Administrator assigns available staff]
+    Assign --> Investigate[Staff investigates and adds comments]
+    Investigate --> Waiting{Waiting for customer?}
+    Waiting -- Yes --> CustomerReply[Customer receives update and replies]
+    CustomerReply --> Investigate
+    Waiting -- No --> Resolve[Staff updates: Open → In Progress → Resolved]
+    Resolve --> Close{Customer issue complete?}
+    Close -- Not yet --> Investigate
+    Close -- Yes --> Closed[Ticket is closed and kept as history]
+    Resolve --> Notify[Customer notification and audit entry]
+    Closed --> Notify
+```
+
+Status transitions are intentionally limited: a closed ticket cannot be
+reopened through the normal workflow. This keeps lifecycle reporting honest and
+prevents an accidental update from rewriting completed work.
+
+### Operational request flow
+
+This is the path followed by a normal browser request. It makes explicit where
+the app rejects bad input before a database write can occur.
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant C as React client
+    participant A as Express API
+    participant G as Auth and role guard
+    participant V as Zod validation and workflow rule
+    participant M as MongoDB replica set
+
+    B->>C: Choose an action
+    C->>A: JSON request with account identifier
+    A->>G: Load account and check role
+    G-->>A: Allow or reject
+    A->>V: Validate data and permitted transition
+    V-->>A: Valid request or useful error
+    A->>M: Read or transactional write
+    M-->>A: Saved document(s)
+    A-->>C: JSON success or error response
+    C-->>B: Updated screen, toast, or field error
 ```
 
 Core modules:
