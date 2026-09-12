@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookOpen, MessageSquareText } from 'lucide-react';
+import { BookOpen, MessageSquareText, Trash2 } from 'lucide-react';
 import { api } from '@/src/api';
 
 export function WorkflowLibrary() {
@@ -25,7 +25,13 @@ export function WorkflowLibrary() {
       void queryClient.invalidateQueries({ queryKey: ['admin-knowledge-base'] });
     },
   });
-  const error = createReply.error || createArticle.error;
+  const deleteArticle = useMutation({
+    mutationFn: api.deleteKnowledgeBaseArticle,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin-knowledge-base'] });
+    },
+  });
+  const error = createReply.error || createArticle.error || deleteArticle.error;
   const submitArticle = (event: React.FormEvent) => {
     event.preventDefault();
     if (article.title.trim().length < 3) return setArticleValidationError('Title must be at least 3 characters.');
@@ -37,6 +43,9 @@ export function WorkflowLibrary() {
       );
     setArticleValidationError('');
     createArticle.mutate(article);
+  };
+  const removeArticle = (id: string, title: string) => {
+    if (window.confirm(`Delete "${title}"? This cannot be undone.`)) deleteArticle.mutate(id);
   };
 
   return (
@@ -204,11 +213,27 @@ export function WorkflowLibrary() {
             ) : articles.data?.length ? (
               articles.data.map((item) => (
                 <article key={item.id} className="rounded border border-line bg-canvas p-3">
-                  <p className="font-bold">
-                    {item.title}{' '}
-                    <span className="font-mono text-xs text-ink-muted">{item.published ? 'Published' : 'Draft'}</span>
-                  </p>
-                  <p className="mt-1 text-sm text-ink-muted">{item.summary}</p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-bold">
+                        {item.title}{' '}
+                        <span className="font-mono text-xs text-ink-muted">
+                          {item.published ? 'Published' : 'Draft'}
+                        </span>
+                      </p>
+                      <p className="mt-1 text-sm text-ink-muted">{item.summary}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeArticle(item.id, item.title)}
+                      disabled={deleteArticle.isPending}
+                      className="shrink-0 rounded border border-danger p-2 text-danger hover:bg-danger-bg focus:outline-none focus:ring-2 focus:ring-danger disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label={`Delete knowledge-base article: ${item.title}`}
+                      title="Delete article"
+                    >
+                      <Trash2 aria-hidden="true" className="h-4 w-4" />
+                    </button>
+                  </div>
                 </article>
               ))
             ) : (

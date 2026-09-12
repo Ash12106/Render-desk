@@ -572,7 +572,8 @@ with an optional comment. Administrators can read aggregate satisfaction results
 at `/reports/customer-satisfaction` (backed by
 `GET /api/admin/reports/customer-satisfaction`). Published help-centre articles
 are available at `/help`; administrators manage those articles and canned
-replies on the `/workflow-library` screen. The server validates article title,
+replies on the `/workflow-library` screen. Administrators can also delete an
+article there after a confirmation prompt. The server validates article title,
 summary, and content lengths before saving, so a too-short draft receives a
 clear field-level message instead of being published accidentally.
 
@@ -681,8 +682,8 @@ npm run build
 npm audit
 ```
 
-Last verified on 2026-09-12: the local suite contains **13 passing test files and
-61 passing tests**, with **25 intentionally skipped integration tests** when no
+Last verified on 2026-09-12: the local suite contains **14 passing test files and
+62 passing tests**, with **26 intentionally skipped integration tests** when no
 integration database is configured. `npm run lint` and `npm run build` pass. The
 build may emit a non-blocking Vite warning when the main browser bundle exceeds
 500 kB.

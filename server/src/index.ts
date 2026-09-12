@@ -1812,6 +1812,19 @@ export async function buildApp() {
     }
   });
 
+  app.delete('/api/admin/knowledge-base/:articleId', mutationLimiter, requireAdmin, async (req, res) => {
+    try {
+      if (!mongoose.isObjectIdOrHexString(req.params.articleId)) {
+        return res.status(400).json({ success: false, message: 'Invalid knowledge-base article ID.' });
+      }
+      const article = await KnowledgeBaseArticle.findByIdAndDelete(req.params.articleId);
+      if (!article) return res.status(404).json({ success: false, message: 'Knowledge-base article not found.' });
+      res.status(204).send();
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
   return app;
 }
 

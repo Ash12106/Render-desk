@@ -2,7 +2,16 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { buildApp } from './index.js';
 import mongoose from 'mongoose';
-import { User, Customer, Ticket, Comment, DeletedTicket, AuditLog, Notification } from '../models/mongo.js';
+import {
+  User,
+  Customer,
+  Ticket,
+  Comment,
+  DeletedTicket,
+  AuditLog,
+  Notification,
+  KnowledgeBaseArticle,
+} from '../models/mongo.js';
 import bcrypt from 'bcryptjs';
 
 const testMongoUri = process.env.TEST_MONGODB_URI;
@@ -17,6 +26,7 @@ describe.skipIf(!testMongoUri)('Support Desk API (dedicated test database)', () 
   let customerUser: any;
   let registeredCustomerUser: any;
   let adminToken: string;
+  let testKnowledgeBaseArticle: any;
 
   beforeAll(async () => {
     // Never run mutating integration tests against the application's database.
@@ -56,6 +66,7 @@ describe.skipIf(!testMongoUri)('Support Desk API (dedicated test database)', () 
         await Customer.findByIdAndDelete(registeredCustomerUser.customerId);
         await User.findByIdAndDelete(registeredCustomerUser.id);
       }
+      if (testKnowledgeBaseArticle) await KnowledgeBaseArticle.findByIdAndDelete(testKnowledgeBaseArticle.id);
       await Customer.findByIdAndDelete(testCustomer?._id);
       if (testCustomer) {
         const active = await Ticket.find({ customerId: testCustomer._id }).select('_id');
@@ -209,6 +220,29 @@ describe.skipIf(!testMongoUri)('Support Desk API (dedicated test database)', () 
     expect(res.body.role).toBe('customer');
     expect(res.body.customerId).toBeDefined();
     registeredCustomerUser = res.body;
+  });
+
+  it('lets only administrators delete knowledge-base articles', async () => {
+    testKnowledgeBaseArticle = await KnowledgeBaseArticle.create({
+      title: 'Test knowledge-base article',
+      summary: 'A summary that is long enough for validation.',
+      content: 'This test article has enough detail to meet the knowledge-base content requirement.',
+      category: 'General',
+      published: true,
+      authorId: adminToken,
+    });
+
+    const staffDelete = await request(app)
+      .delete(`/api/admin/knowledge-base/${testKnowledgeBaseArticle.id}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(staffDelete.status).toBe(403);
+
+    const adminDelete = await request(app)
+      .delete(`/api/admin/knowledge-base/${testKnowledgeBaseArticle.id}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(adminDelete.status).toBe(204);
+    expect(await KnowledgeBaseArticle.findById(testKnowledgeBaseArticle.id)).toBeNull();
+    testKnowledgeBaseArticle = undefined;
   });
 
   it('should create a new ticket', async () => {

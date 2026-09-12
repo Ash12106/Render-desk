@@ -177,6 +177,8 @@ export const api = {
     category: string;
     published: boolean;
   }) => fetchJson<KnowledgeBaseArticle>('/api/admin/knowledge-base', { method: 'POST', body: JSON.stringify(data) }),
+  deleteKnowledgeBaseArticle: (articleId: string) =>
+    fetchJson<void>(`/api/admin/knowledge-base/${articleId}`, { method: 'DELETE' }),
   getCustomerSatisfactionReport: () => fetchJson<SatisfactionReport>('/api/admin/reports/customer-satisfaction'),
 
   login: (data: { username: string; password: string }) => {
