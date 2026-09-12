@@ -229,8 +229,9 @@ If the health URL still fails, check the Krawl service logs. The startup log mus
 say `DASHBOARD AVAILABLE AT /security-dashboard-secret`. If it shows a random path,
 the service was deployed from **Existing Image** instead of this repository's
 `Dockerfile.krawl`; recreate or redeploy the Krawl service using that Dockerfile.
-The local Compose service is pinned to Krawl `v2.3.1` so local and Render behavior
-remain aligned.
+The local Compose service is pinned to the published Krawl `2.3.0` image so local
+and Render behavior remain aligned. The previously referenced `v2.3.1` image tag
+does not exist in GHCR and will fail to pull.
 
 Krawl's standalone SQLite data requires persistent storage for durable history.
 Free hosting services may restart or sleep services and discard local SQLite data;
