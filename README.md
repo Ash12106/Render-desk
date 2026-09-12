@@ -89,6 +89,7 @@ Expected local URLs:
 
 - Staff/admin login: `http://localhost:3000/`
 - Customer login and registration: `http://localhost:3000/customer/login`
+- Process liveness: `http://localhost:3000/api/health/live`
 - Database readiness: `http://localhost:3000/api/health/db`
 - Swagger UI: `http://localhost:3000/api-docs`
 
@@ -381,12 +382,29 @@ data changes.
 | `server/controllers/` | Holds business rules that should not depend on HTTP | Allowed ticket status transitions |
 | `server/models/` | Defines Mongoose schemas, indexes, migrations, and transactions | Users, tickets, audit records, notifications |
 | `server/src/notifications.ts` | Records and simulates customer status-change notifications | A ticket update creates a traceable notification |
+| `server/src/observability/` | Adds request IDs, JSON request logs, and liveness/readiness handlers | An incident can be traced without recording request bodies or credentials. |
 | `server/src/*.test.ts` | Tests API contracts, error conditions, data setup, and integrations | Database configuration and lifecycle rules |
 
 Every write is validated with Zod before it reaches MongoDB. Related writes
 such as ticket creation, status updates, archival, and restoration are grouped
 in MongoDB transactions; that is why the local database must run as a replica
 set.
+
+### Observability and operational health
+
+Each response includes an `X-Request-Id`. API requests are logged as structured
+JSON with that identifier, HTTP method, path, response code, and duration. The
+logger intentionally never records authorization headers, request bodies, or
+password-reset tokens.
+
+| Endpoint | Meaning | Typical use |
+| --- | --- | --- |
+| `GET /api/health/live` | The Express process can receive traffic; it does not contact MongoDB. | Platform liveness check and quick process diagnosis. |
+| `GET /api/health/db` | MongoDB is connected and responds to a ping. | Deployment readiness check and database dependency monitoring. |
+
+When troubleshooting a failed request, share its `X-Request-Id` with the
+operator. They can use it to find the matching server log entry without needing
+the user to send passwords, request contents, or private ticket details.
 
 ### Database design
 

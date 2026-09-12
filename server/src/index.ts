@@ -3,7 +3,6 @@ import express from 'express';
 import path from 'path';
 import {
   connectMongoDB,
-  getMongoConnectionState,
   Ticket,
   Customer,
   Comment,
@@ -26,6 +25,11 @@ import { queueCustomerStatusNotification, simulateStatusChangeNotification } fro
 import { assertValidStatusTransition } from '../controllers/ticketStatusController.js';
 import crypto from 'node:crypto';
 import nodemailer from 'nodemailer';
+import { authMiddleware, requireAdmin, requireRole } from './middleware/auth.js';
+import { withTransaction } from './services/transactions.js';
+import { handleApiError } from './services/apiErrors.js';
+import { apiRequestLogger, requestContext } from './observability/requestContext.js';
+import { databaseReadinessHandler, livenessHandler } from './observability/health.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
@@ -204,63 +208,6 @@ const openApiDocument = {
   },
 };
 
-async function withTransaction<T>(operation: (session: mongoose.ClientSession) => Promise<T>): Promise<T> {
-  const session = await mongoose.startSession();
-  try {
-    let result!: T;
-    await session.withTransaction(async () => {
-      result = await operation(session);
-    });
-    return result;
-  } finally {
-    await session.endSession();
-  }
-}
-
-function requireRole(role: 'staff' | 'customer') {
-  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const userRole = (req as any).user?.role;
-    const allowed = role === 'staff' ? userRole === 'staff' || userRole === 'admin' : userRole === role;
-    if (!allowed) {
-      return res
-        .status(403)
-        .json({ success: false, message: 'This account does not have access to this area.', data: null });
-    }
-    next();
-  };
-}
-
-function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
-  if ((req as any).user?.role !== 'admin') {
-    return res.status(403).json({ success: false, message: 'Administrator access required.', data: null });
-  }
-  next();
-}
-
-// Basic authentication middleware
-const authMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ success: false, message: 'Authentication required', data: null });
-  }
-
-  const token = authHeader.split(' ')[1];
-  try {
-    if (!mongoose.Types.ObjectId.isValid(token)) {
-      return res.status(401).json({ success: false, message: 'Invalid token format', data: null });
-    }
-    const user = await User.findById(token);
-    if (!user) {
-      return res.status(401).json({ success: false, message: 'Invalid or expired token', data: null });
-    }
-    // attach user to req
-    (req as any).user = user;
-    next();
-  } catch (_err) {
-    return res.status(500).json({ success: false, message: 'Error verifying authentication', data: null });
-  }
-};
-
 export async function buildApp() {
   const app = express();
   // Render sits in front of the app and supplies one X-Forwarded-For proxy hop.
@@ -286,21 +233,14 @@ export async function buildApp() {
           : false,
     }),
   );
+  app.use(requestContext);
+  app.use('/api', apiRequestLogger);
   app.use(express.json({ limit: '40mb' }));
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiDocument));
   app.use('/api/tickets', mutationLimiter);
 
-  app.get('/api/health/db', async (_req, res) => {
-    try {
-      if (mongoose.connection.readyState !== 1 || !mongoose.connection.db) {
-        return res.status(503).json({ status: 'degraded', database: getMongoConnectionState() });
-      }
-      await mongoose.connection.db.command({ ping: 1 });
-      res.json({ status: 'ok', database: getMongoConnectionState() });
-    } catch (_error) {
-      res.status(503).json({ status: 'degraded', database: getMongoConnectionState() });
-    }
-  });
+  app.get('/api/health/live', livenessHandler);
+  app.get('/api/health/db', databaseReadinessHandler);
 
   app.get('/api/auth/config', (_req, res) => {
     res.json({ googleClientId: googleClientId || null });
@@ -508,54 +448,6 @@ export async function buildApp() {
       handleApiError(res, req, err);
     }
   });
-
-  // API Error handler helper
-  const handleApiError = (res: express.Response, req: express.Request, err: any) => {
-    if (
-      err.name === 'MongooseError' ||
-      err.name === 'MongoNetworkError' ||
-      err.name === 'MongoServerSelectionError' ||
-      err.name === 'MongoNotConnectedError' ||
-      (err.message && err.message.includes('buffering timed out'))
-    ) {
-      console.warn('Database unavailable — request failed');
-      return res
-        .status(503)
-        .json({ success: false, message: 'Service temporarily unavailable (database offline)', data: null });
-    }
-
-    if (err?.code === 11000) {
-      return res
-        .status(409)
-        .json({ success: false, message: 'An account with these details already exists.', data: null });
-    }
-    if (err?.name === 'CastError' || err?.name === 'ValidationError') {
-      return res.status(400).json({ success: false, message: 'Invalid request data.', data: null });
-    }
-    if (err instanceof z.ZodError) {
-      const fields: Record<string, string> = {};
-      err.issues.forEach((e) => {
-        if (e.path.length > 0) {
-          fields[e.path[0] as string] = e.message;
-        }
-      });
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        fields,
-        data: null,
-      });
-    }
-    if (err instanceof Error && 'statusCode' in err && (err.statusCode === 403 || err.statusCode === 409)) {
-      return res.status(err.statusCode).json({ success: false, message: err.message, data: null });
-    }
-    console.error(err);
-    res.status(500).json({
-      success: false,
-      message: 'Unexpected server failure',
-      data: null,
-    });
-  };
 
   // POST /api/auth/login
   app.post('/api/auth/login', async (req, res) => {
