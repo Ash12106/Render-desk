@@ -35,11 +35,12 @@ support-ops-desk/
 └── README.md
 ```
 
-Run the full application from the repository root with `npm run dev`. Use
-`npm run dev:client` when only the Vite client is needed. The production server
-serves the built `client/dist` directory, so the deployed app remains a single
-web service. The server workspace explicitly loads the repository-root `.env`
-when running `npm run dev`, `npm run start`, or `npm run seed`.
+Run the API and production-style app from the repository root with `npm run dev`.
+For frontend-only work, use `npm run dev:client`; Vite proxies `/api` to
+`http://127.0.0.1:3000` by default. The production server serves the built
+`client/dist` directory, so the deployed app remains a single web service. The
+server workspace explicitly loads the repository-root `.env` when running
+`npm run dev`, `npm run start`, or `npm run seed`.
 When the local development port is already in use (for example, by Docker),
 `npm run dev` automatically starts on the next port and prints its URL.
 
@@ -94,7 +95,8 @@ Expected local URLs:
 - Swagger UI: `http://localhost:3000/api-docs`
 
 When the development server falls back to `3001`, replace `3000` with `3001`
-in the URLs above.
+in the URLs above. For a separately running Vite frontend, point its proxy at
+the fallback server with `VITE_API_PROXY_TARGET=http://127.0.0.1:3001 npm run dev:client`.
 
 Krawl security monitoring is available only inside the authenticated administrator
 workspace at `http://localhost:3000/security`. Krawl is not published on a separate
@@ -351,8 +353,8 @@ flowchart LR
 ```
 
 The production server serves the built client files and the API from the same
-public origin. Locally, Vite is attached as Express middleware so the browser
-still talks to a single application address.
+public origin. Locally, the separate Vite server proxies `/api` to Express, so
+browser code uses the same API paths in both environments.
 
 ### Client design
 
@@ -529,9 +531,43 @@ flowchart TD
     Closed --> Notify
 ```
 
-Status transitions are intentionally limited: a closed ticket cannot be
-reopened through the normal workflow. This keeps lifecycle reporting honest and
-prevents an accidental update from rewriting completed work.
+### Product workflow additions
+
+Tickets can carry short **tags** and a category, receive a priority-based SLA
+deadline (Critical 4h, High 24h, Medium 48h, Low 72h), and be escalated up to
+level 3 with a required reason. Staff keep private handoff notes separate from
+the customer-visible conversation and can choose an administrator-managed canned
+reply. A customer may reopen a resolved ticket once; a closed ticket remains
+read-only. These limits keep the reported resolution history meaningful while
+still providing a controlled route for a genuinely unresolved issue.
+
+When a staff member changes a status with notification enabled, the customer
+receives an in-app notification and, only when valid SMTP credentials and a
+real customer email are configured, a status email. The server never sends to
+the placeholder demo address. The UI also subscribes to authenticated SSE
+events and refetches only data the signed-in person is allowed to read; normal
+query polling remains a fallback for networks that block streaming.
+
+After resolution or closure, customers can submit one 1–5 satisfaction rating
+with an optional comment. Administrators can read aggregate satisfaction results
+at `GET /api/admin/reports/customer-satisfaction`. Published help-centre articles
+are available at `/help` and are managed at `/api/admin/knowledge-base`.
+
+```mermaid
+flowchart LR
+    New[Customer creates ticket] --> SLA[Category, tags and SLA set]
+    SLA --> Queue[Assign and investigate]
+    Queue --> Note[Staff-only notes / canned reply]
+    Note --> Escalate{SLA risk or blocker?}
+    Escalate -- Yes --> Rule[Escalate with reason, max level 3]
+    Escalate -- No --> Resolve[Resolve ticket]
+    Rule --> Resolve
+    Resolve --> Notify[In-app + configured SMTP email + SSE event]
+    Notify --> Rating[Customer satisfaction rating]
+    Resolve --> Reopen{Still unresolved?}
+    Reopen -- Once --> Queue
+    Reopen -- No --> Close[Closed, read-only history]
+```
 
 ### Operational request flow
 
@@ -619,10 +655,11 @@ npm run build
 npm audit
 ```
 
-The verified local suite contains 11 passing test files and 55 passing tests, with
-24 intentionally skipped tests. `npm run lint`, `npm run lint:eslint`, and
-`npm run format:check` pass. The build may emit a non-blocking Vite warning when
-the main browser bundle exceeds 500 kB.
+Last verified on 2026-09-12: the local suite contains **13 passing test files and
+61 passing tests**, with **24 intentionally skipped integration tests** when no
+integration database is configured. `npm run lint` and `npm run build` pass. The
+build may emit a non-blocking Vite warning when the main browser bundle exceeds
+500 kB.
 
 ### Verification report
 
@@ -669,6 +706,25 @@ Required Render variables are `MONGO_URI`, `CORS_ORIGIN`,
 Render's environment settings, not in this file.
 
 Do not set `PORT` manually on Render; Render provides the port to the container.
+
+### Deployment checklist
+
+Before promoting a build, use this short checklist:
+
+1. Set `MONGO_URI`, `CORS_ORIGIN`, `ADMIN_PASSWORD`, `APP_BASE_URL`, and all
+   SMTP variables in the platform secret store; never commit them.
+2. Confirm MongoDB is a replica set (Atlas is suitable) and that
+   `/api/health/db` reports `database.connected: true`.
+3. Add the exact production origin and redirect/callback URLs to the Google OAuth
+   client, and keep `GOOGLE_CLIENT_ID` aligned with the frontend configuration.
+4. Verify SMTP with a non-production test customer and confirm that the sender
+   address is accepted by the provider before enabling customer mail.
+5. Confirm backups, retention, and a restore test for the MongoDB deployment.
+6. Run `npm run lint`, `npm test`, and `npm run build`, then smoke-test staff,
+   customer, email, and `/help` flows after deployment.
+7. Keep the previous known-good image or Render deploy available. If the new
+   release is unhealthy, roll back the service first; only restore data after
+   checking the incident scope and the most recent tested backup.
 
 Render does not run this repository's Docker Compose stack. Deploy Krawl as a
 second Render web service from this same GitHub repository using `Dockerfile.krawl`
