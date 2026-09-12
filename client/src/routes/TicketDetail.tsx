@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '@/src/api';
-import { Ticket, Comment, AuditLog } from '@/src/types';
+import { Ticket, Comment, AuditLog, CannedReply, InternalNote } from '@/src/types';
 import { StatusBadge, PriorityBadge } from '@/src/components/ui/Badge';
 import { formatDate, getSlaStatus } from '@/src/lib/utils';
 import { motion } from 'motion/react';
@@ -10,6 +10,7 @@ import { useToast } from '@/src/components/ui/Toast';
 import { ConfirmModal } from '@/src/components/ui/ConfirmModal';
 import { useQueryClient } from '@tanstack/react-query';
 import { getStoredAuthUser } from '@/src/lib/auth';
+import { useWorkflowEvents } from '@/src/hooks/useWorkflowEvents';
 
 export function TicketDetail() {
   const { id } = useParams<{ id: string }>();
@@ -28,31 +29,48 @@ export function TicketDetail() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const currentUser = getStoredAuthUser();
   const [activityStatusSaving, setActivityStatusSaving] = useState(false);
+  const [internalNotes, setInternalNotes] = useState<InternalNote[]>([]);
+  const [newInternalNote, setNewInternalNote] = useState('');
+  const [cannedReplies, setCannedReplies] = useState<CannedReply[]>([]);
+  const [escalationReason, setEscalationReason] = useState('');
+
+  const refreshTicket = useCallback(async (showLoading = false) => {
+    if (!id) return;
+    try {
+      if (showLoading) setLoading(true);
+      setError(null);
+      const { ticket: fetchedTicket, comments: fetchedComments, logs: fetchedLogs } = await api.getTicket(id);
+      setTicket(fetchedTicket);
+
+      const combined = [
+        ...fetchedComments,
+        ...(fetchedLogs || []).filter((log) => log.action !== 'COMMENT_ADDED'),
+      ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      setActivities(combined);
+      if (showLoading) {
+        const [notes, replies] = await Promise.all([api.getInternalNotes(id), api.getCannedReplies()]);
+        setInternalNotes(notes);
+        setCannedReplies(replies);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Ticket not found');
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  }, [id]);
 
   useEffect(() => {
-    if (!id) return;
-    const load = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const { ticket: fetchedTicket, comments: fetchedComments, logs: fetchedLogs } = await api.getTicket(id);
-        setTicket(fetchedTicket);
+    void refreshTicket(true);
+  }, [refreshTicket]);
 
-        const combined = [
-          ...fetchedComments,
-          ...(fetchedLogs || []).filter((log) => log.action !== 'COMMENT_ADDED'),
-        ].sort((a, b) => {
-          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-        });
-        setActivities(combined);
-      } catch (err: any) {
-        setError(err.message || 'Ticket not found');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [id]);
+  useWorkflowEvents(
+    useCallback(
+      (event) => {
+        if (event.ticketId === id) void refreshTicket();
+      },
+      [id, refreshTicket],
+    ),
+  );
 
   useEffect(() => {
     if (!id || ticket?.status === 'Closed') return;
@@ -71,7 +89,7 @@ export function TicketDetail() {
       }
     };
 
-    const interval = window.setInterval(refreshComments, 1500);
+    const interval = window.setInterval(refreshComments, 15000);
     return () => window.clearInterval(interval);
   }, [id, ticket?.status]);
 
@@ -182,6 +200,31 @@ export function TicketDetail() {
     }
   };
 
+  const addInternalNote = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!id || !newInternalNote.trim()) return;
+    try {
+      const note = await api.createInternalNote(id, newInternalNote.trim());
+      setInternalNotes((current) => [...current, note]);
+      setNewInternalNote('');
+      showToast('Internal note saved');
+    } catch (error: any) {
+      showToast(error.message || 'Unable to save internal note', 'error');
+    }
+  };
+
+  const escalate = async () => {
+    if (!id || !escalationReason.trim()) return;
+    try {
+      const updated = await api.escalateTicket(id, escalationReason.trim());
+      setTicket(updated);
+      setEscalationReason('');
+      showToast('Ticket escalated');
+    } catch (error: any) {
+      showToast(error.message || 'Unable to escalate ticket', 'error');
+    }
+  };
+
   if (loading) {
     return <div className="animate-pulse h-64 bg-surface border border-line rounded-md m-8"></div>;
   }
@@ -284,6 +327,16 @@ export function TicketDetail() {
                 </div>
               </section>
 
+              {(ticket.tags?.length || ticket.escalationLevel) && (
+                <section aria-label="Ticket workflow details">
+                  <h3 className="font-mono text-xs font-bold text-ink uppercase tracking-[0.2em] mb-3">Workflow</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {ticket.tags?.map((tag) => <span key={tag} className="px-2 py-1 border border-ink rounded-full font-mono text-[10px] uppercase">#{tag}</span>)}
+                    {!!ticket.escalationLevel && <span className="px-2 py-1 border border-danger text-danger rounded-full font-mono text-[10px] uppercase">Escalation L{ticket.escalationLevel}</span>}
+                  </div>
+                </section>
+              )}
+
               {ticket.attachments && ticket.attachments.length > 0 && (
                 <section>
                   <h3 className="font-mono text-xs font-bold text-ink uppercase tracking-[0.2em] mb-4">Attachments</h3>
@@ -324,6 +377,15 @@ export function TicketDetail() {
                   Use this for handoffs and response tracking; lifecycle status remains separate.
                 </p>
               </section>
+
+              {currentUser?.role !== 'admin' && ticket.status !== 'Closed' && (
+                <section className="border-2 border-danger rounded-md p-4 bg-danger-bg/20">
+                  <h3 className="font-mono text-xs font-bold uppercase mb-2">Escalate ticket</h3>
+                  <label htmlFor="escalation-reason" className="sr-only">Escalation reason</label>
+                  <textarea id="escalation-reason" value={escalationReason} onChange={(event) => setEscalationReason(event.target.value)} rows={2} placeholder="Why does this need urgent attention?" className="w-full border border-ink rounded p-2 text-sm" />
+                  <button type="button" onClick={escalate} disabled={escalationReason.trim().length < 3} className="mt-2 px-3 py-2 text-xs font-mono font-bold uppercase bg-danger text-white rounded disabled:opacity-50">Escalate</button>
+                </section>
+              )}
 
               <section>
                 <h3 className="font-mono text-xs font-bold text-ink uppercase tracking-[0.2em] mb-4">
@@ -413,6 +475,18 @@ export function TicketDetail() {
                     </p>
                   ) : (
                     <form onSubmit={handleAddComment} className="mt-6">
+                      {cannedReplies.length > 0 && (
+                        <label className="block mb-2 text-xs font-mono font-bold uppercase">
+                          Canned reply
+                          <select aria-label="Canned reply" defaultValue="" onChange={(event) => {
+                            const reply = cannedReplies.find((item) => item.id === event.target.value);
+                            if (reply) setNewComment(reply.content);
+                          }} className="ml-2 border border-ink rounded p-1 normal-case font-sans">
+                            <option value="">Choose a reply…</option>
+                            {cannedReplies.map((reply) => <option key={reply.id} value={reply.id}>{reply.category}: {reply.title}</option>)}
+                          </select>
+                        </label>
+                      )}
                       <textarea
                         value={newComment}
                         onChange={(e) => setNewComment(e.target.value)}
@@ -433,6 +507,19 @@ export function TicketDetail() {
                     </form>
                   )}
                 </div>
+              </section>
+
+              <section aria-labelledby="internal-notes-heading" className="border-2 border-ink rounded-md p-4 bg-warning-bg/20">
+                <h3 id="internal-notes-heading" className="font-mono text-xs font-bold uppercase tracking-[0.2em] mb-3">Internal staff notes</h3>
+                <p className="text-xs text-ink-muted mb-3">Visible only to staff and administrators; never shown in the customer portal.</p>
+                <div className="space-y-2 mb-3">
+                  {internalNotes.map((note) => <article key={note.id} className="bg-surface border border-ink rounded p-2 text-sm"><strong>{note.author}</strong><p className="whitespace-pre-wrap">{note.content}</p></article>)}
+                </div>
+                <form onSubmit={addInternalNote}>
+                  <label htmlFor="internal-note" className="sr-only">Add internal note</label>
+                  <textarea id="internal-note" value={newInternalNote} onChange={(event) => setNewInternalNote(event.target.value)} rows={3} placeholder="Add a private handoff note…" className="w-full border border-ink rounded p-2 text-sm" />
+                  <button type="submit" disabled={!newInternalNote.trim()} className="mt-2 px-3 py-2 text-xs font-mono font-bold uppercase bg-ink text-white rounded disabled:opacity-50">Save internal note</button>
+                </form>
               </section>
             </div>
 

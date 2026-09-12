@@ -24,6 +24,8 @@ import { StaffManagement } from './routes/StaffManagement';
 import { KrawlSecurityAdmin } from './components/admin/KrawlSecurityAdmin';
 import { getStoredAuthUser } from './lib/auth';
 import { ForgotPassword, ResetPassword } from './routes/PasswordReset';
+import { KnowledgeBase } from './routes/KnowledgeBase';
+import { CustomerSatisfactionReport } from './routes/CustomerSatisfactionReport';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const authUser = getStoredAuthUser();
@@ -57,6 +59,7 @@ export default function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/customer/login" element={<CustomerLogin />} />
+          <Route path="/help" element={<KnowledgeBase />} />
           <Route
             path="/"
             element={
@@ -95,6 +98,14 @@ export default function App() {
                     <h1 className="sr-only">Krawl dashboard</h1>
                     <KrawlSecurityAdmin />
                   </div>
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="reports/customer-satisfaction"
+              element={
+                <AdminRoute>
+                  <CustomerSatisfactionReport />
                 </AdminRoute>
               }
             />

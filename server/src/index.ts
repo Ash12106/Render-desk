@@ -11,6 +11,10 @@ import {
   Notification,
   DeletedTicket,
   PasswordResetToken,
+  InternalNote,
+  CannedReply,
+  CustomerSatisfaction,
+  KnowledgeBaseArticle,
 } from '../models/mongo.js';
 import { z } from 'zod';
 import mongoose from 'mongoose';
@@ -21,7 +25,11 @@ import krawlRouter from '../routes/krawl.js';
 import rateLimit from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
 import { OAuth2Client } from 'google-auth-library';
-import { queueCustomerStatusNotification, simulateStatusChangeNotification } from './notifications.js';
+import {
+  deliverCustomerStatusEmail,
+  queueCustomerStatusNotification,
+  simulateStatusChangeNotification,
+} from './notifications.js';
 import { assertValidStatusTransition } from '../controllers/ticketStatusController.js';
 import crypto from 'node:crypto';
 import nodemailer from 'nodemailer';
@@ -30,6 +38,8 @@ import { withTransaction } from './services/transactions.js';
 import { handleApiError } from './services/apiErrors.js';
 import { apiRequestLogger, requestContext } from './observability/requestContext.js';
 import { databaseReadinessHandler, livenessHandler } from './observability/health.js';
+import { calculateSlaDueAt, isSlaBreached, MAX_ESCALATION_LEVEL } from './services/ticketWorkflow.js';
+import { eventsHandler, publishWorkflowEvent } from './realtime/sse.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
@@ -94,6 +104,7 @@ const ticketSchema = z.object({
   ticketForm: z.string().trim().max(120).optional().default(''),
   impact: z.enum(['No Impact', 'Site Down', 'Server Issue', 'Minor', 'Major', 'Crisis']).default('No Impact'),
   productFamily: z.string().trim().max(120).optional().default(''),
+  tags: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
   attachments: z
     .array(
       z.object({
@@ -123,6 +134,25 @@ const googleLoginSchema = z.object({
 const commentSchema = z.object({
   content: z.string().trim().min(1, 'Enter a comment.'),
   author: z.string().trim().min(1, 'Author name required.'),
+});
+
+const internalNoteSchema = z.object({ content: z.string().trim().min(1).max(10_000) });
+const cannedReplySchema = z.object({
+  title: z.string().trim().min(2).max(120),
+  content: z.string().trim().min(1).max(10_000),
+  category: z.string().trim().min(1).max(60).default('General'),
+});
+const escalationSchema = z.object({
+  reason: z.string().trim().min(3).max(500),
+  level: z.coerce.number().int().min(1).max(MAX_ESCALATION_LEVEL).optional(),
+});
+const satisfactionSchema = z.object({ score: z.coerce.number().int().min(1).max(5), comment: z.string().trim().max(2_000).default('') });
+const knowledgeBaseSchema = z.object({
+  title: z.string().trim().min(3).max(180),
+  summary: z.string().trim().min(10).max(500),
+  content: z.string().trim().min(20).max(20_000),
+  category: z.string().trim().min(1).max(60).default('General'),
+  published: z.boolean().default(false),
 });
 
 const phoneSchema = z
@@ -241,6 +271,19 @@ export async function buildApp() {
 
   app.get('/api/health/live', livenessHandler);
   app.get('/api/health/db', databaseReadinessHandler);
+
+  // Public, read-only knowledge base: customers can find answers before opening a ticket.
+  app.get('/api/knowledge-base', async (req, res) => {
+    try {
+      const search = z.string().trim().max(100).optional().parse(req.query.search);
+      const filter: Record<string, unknown> = { published: true };
+      if (search) filter.$or = [{ title: { $regex: search, $options: 'i' } }, { summary: { $regex: search, $options: 'i' } }];
+      const articles = await KnowledgeBaseArticle.find(filter).sort({ updatedAt: -1 }).limit(50);
+      res.json(articles);
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
 
   app.get('/api/auth/config', (_req, res) => {
     res.json({ googleClientId: googleClientId || null });
@@ -474,6 +517,7 @@ export async function buildApp() {
 
   // Authenticate API requests before mounting routes that use the current user.
   app.use('/api', authMiddleware);
+  app.get('/api/events', eventsHandler);
   app.use(krawlRouter);
 
   app.get('/api/profile', async (req, res) => {
@@ -872,6 +916,11 @@ export async function buildApp() {
       });
 
       res.status(201).json(newComment);
+      publishWorkflowEvent({
+        type: 'comment.created',
+        ticketId: req.params.id,
+        audience: { roles: ['admin', 'staff'], customerId: ticket.customerId.toString() },
+      });
     } catch (err) {
       handleApiError(res, req, err);
     }
@@ -946,8 +995,10 @@ export async function buildApp() {
               ticketForm: data.ticketForm,
               impact: data.impact,
               productFamily: data.productFamily,
+              tags: data.tags,
               attachments: data.attachments,
               dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+              slaDueAt: calculateSlaDueAt(data.priority),
             },
           ],
           { session },
@@ -959,6 +1010,47 @@ export async function buildApp() {
         return ticket;
       });
       res.status(201).json(savedTicket);
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
+  // A customer can ask for one controlled reopening after resolution. Closed
+  // tickets remain final and require staff/admin escalation instead.
+  app.post('/api/customer/tickets/:id/reopen', mutationLimiter, requireRole('customer'), async (req, res) => {
+    try {
+      const { reason } = z.object({ reason: z.string().trim().min(3).max(500) }).parse(req.body);
+      const ticket = await Ticket.findOne({ _id: req.params.id, customerId: req.user!.customerId, deletedAt: null });
+      if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found.', data: null });
+      if (ticket.status !== 'Resolved') return res.status(409).json({ success: false, message: 'Only resolved tickets can be reopened. Closed tickets require an escalation request.', data: null });
+      if (ticket.reopenCount >= 1) return res.status(409).json({ success: false, message: 'This ticket has already been reopened once. Please contact support for further help.', data: null });
+      await withTransaction(async (session) => {
+        ticket.status = 'In Progress';
+        ticket.reopenCount += 1;
+        await ticket.save({ session });
+        await AuditLog.create([{ ticketId: ticket._id, action: 'REOPENED', details: `Customer reopened ticket: ${reason}`, author: req.user!.username }], { session });
+      });
+      publishWorkflowEvent({ type: 'ticket.updated', ticketId: ticket.id, audience: { roles: ['admin', 'staff'], customerId: ticket.customerId.toString() } });
+      res.json(ticket);
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
+  app.post('/api/customer/tickets/:id/satisfaction', mutationLimiter, requireRole('customer'), async (req, res) => {
+    try {
+      const data = satisfactionSchema.parse(req.body);
+      const ticket = await Ticket.findOne({ _id: req.params.id, customerId: req.user!.customerId, deletedAt: null });
+      if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found.', data: null });
+      if (!['Resolved', 'Closed'].includes(ticket.status)) return res.status(409).json({ success: false, message: 'Feedback is available after a ticket is resolved.', data: null });
+      const feedback = await CustomerSatisfaction.findOneAndUpdate(
+        { ticketId: ticket._id },
+        { customerId: ticket.customerId, score: data.score, comment: data.comment },
+        { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
+      );
+      await AuditLog.create({ ticketId: ticket._id, action: 'SATISFACTION_RECORDED', details: `Customer satisfaction score: ${data.score}/5`, author: req.user!.username });
+      publishWorkflowEvent({ type: 'feedback.created', ticketId: ticket.id, audience: { roles: ['admin'] } });
+      res.status(201).json(feedback);
     } catch (err) {
       handleApiError(res, req, err);
     }
@@ -1061,6 +1153,7 @@ export async function buildApp() {
         const json = t.toJSON();
         return {
           ...json,
+          slaBreached: isSlaBreached(t.slaDueAt, t.status),
           customerId: (t.customerId as any)?.id,
           customerName: (t.customerId as any)?.name,
           customerEmail: (t.customerId as any)?.email,
@@ -1139,8 +1232,10 @@ export async function buildApp() {
               ticketForm: data.ticketForm,
               impact: data.impact,
               productFamily: data.productFamily,
+              tags: data.tags,
               attachments: data.attachments,
               dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+              slaDueAt: calculateSlaDueAt(data.priority),
               assignedTo: (req as any).user?.role === 'staff' ? (req as any).user._id : null,
             },
           ],
@@ -1194,6 +1289,7 @@ export async function buildApp() {
       const author = (req as any).user?.username || 'System';
       const notificationEvents: Array<{
         ticketId: string;
+        customerId: string;
         ticketTitle: string;
         recipient: string;
         oldStatus: string;
@@ -1231,6 +1327,7 @@ export async function buildApp() {
             .forEach((ticket) => {
               notificationEvents.push({
                 ticketId: ticket._id.toString(),
+                customerId: (ticket.customerId as any)._id.toString(),
                 ticketTitle: ticket.title,
                 recipient: (ticket.customerId as any).email || 'customer@example.com',
                 oldStatus: ticket.status,
@@ -1240,7 +1337,11 @@ export async function buildApp() {
         }
       });
 
-      notificationEvents.forEach(simulateStatusChangeNotification);
+      notificationEvents.forEach((event) => {
+        simulateStatusChangeNotification(event);
+        void deliverCustomerStatusEmail(event);
+        publishWorkflowEvent({ type: 'notification.created', ticketId: event.ticketId, audience: { customerId: event.customerId } });
+      });
 
       res.json({ success: true, updatedCount: objectIds.length });
     } catch (err) {
@@ -1297,8 +1398,10 @@ export async function buildApp() {
             ticketForm: data.ticketForm,
             impact: data.impact,
             productFamily: data.productFamily,
+            tags: data.tags,
             attachments: data.attachments,
             dueDate: data.dueDate ? new Date(data.dueDate) : null,
+            slaDueAt: oldTicket.priority !== data.priority ? calculateSlaDueAt(data.priority) : oldTicket.slaDueAt,
           },
           { returnDocument: 'after', session },
         ).populate('customerId', 'name email');
@@ -1338,14 +1441,23 @@ export async function buildApp() {
       if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found', data: null });
 
       if (data.notifyUser && oldTicket.status !== data.status) {
-        simulateStatusChangeNotification({
+        const notificationEvent = {
           ticketId: ticket.id.toString(),
           ticketTitle: ticket.title,
           recipient: (ticket.customerId as any)?.email || 'customer@example.com',
           oldStatus: oldTicket.status,
           newStatus: data.status,
+        };
+        simulateStatusChangeNotification(notificationEvent);
+        void deliverCustomerStatusEmail(notificationEvent);
+        publishWorkflowEvent({
+          type: 'notification.created',
+          ticketId: ticket.id.toString(),
+          audience: { customerId: oldTicket.customerId.toString() },
         });
       }
+
+      publishWorkflowEvent({ type: 'ticket.updated', ticketId: ticket.id.toString(), audience: { roles: ['admin', 'staff'] } });
 
       const json = ticket.toJSON();
       res.json({
@@ -1491,6 +1603,107 @@ export async function buildApp() {
       });
 
       res.status(201).json(newComment);
+      publishWorkflowEvent({
+        type: 'comment.created',
+        ticketId: req.params.id,
+        audience: { roles: ['admin', 'staff'], customerId: ticket.customerId.toString() },
+      });
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
+  app.get('/api/tickets/:id/internal-notes', async (req, res) => {
+    try {
+      const notes = await InternalNote.find({ ticketId: req.params.id }).sort({ createdAt: 1 });
+      res.json(notes);
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
+  app.post('/api/tickets/:id/internal-notes', mutationLimiter, async (req, res) => {
+    try {
+      const data = internalNoteSchema.parse(req.body);
+      const ticketFilter: Record<string, unknown> = { _id: req.params.id, deletedAt: null };
+      if (req.user!.role === 'staff') ticketFilter.assignedTo = req.user!._id;
+      const ticket = await Ticket.findOne(ticketFilter);
+      if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found.', data: null });
+      const note = await InternalNote.create({ ticketId: ticket._id, authorId: req.user!._id, author: req.user!.username, content: data.content });
+      await AuditLog.create({ ticketId: ticket._id, action: 'INTERNAL_NOTE_ADDED', details: 'Added internal staff note', author: req.user!.username });
+      publishWorkflowEvent({ type: 'ticket.updated', ticketId: ticket.id, audience: { roles: ['admin', 'staff'] } });
+      res.status(201).json(note);
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
+  app.post('/api/tickets/:id/escalations', mutationLimiter, async (req, res) => {
+    try {
+      const data = escalationSchema.parse(req.body);
+      const ticketFilter: Record<string, unknown> = { _id: req.params.id, deletedAt: null };
+      if (req.user!.role === 'staff') ticketFilter.assignedTo = req.user!._id;
+      const ticket = await Ticket.findOne(ticketFilter);
+      if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found.', data: null });
+      if (ticket.status === 'Closed') return res.status(409).json({ success: false, message: 'Closed tickets cannot be escalated.', data: null });
+      const level = data.level || Math.min(ticket.escalationLevel + 1, MAX_ESCALATION_LEVEL);
+      if (level <= ticket.escalationLevel) return res.status(409).json({ success: false, message: 'This ticket is already at the requested escalation level.', data: null });
+      ticket.escalationLevel = level;
+      ticket.escalationReason = data.reason;
+      ticket.escalatedAt = new Date();
+      if (ticket.priority !== 'Critical') ticket.priority = 'Critical';
+      await ticket.save();
+      await AuditLog.create({ ticketId: ticket._id, action: 'ESCALATED', details: `Escalated to level ${level}: ${data.reason}`, author: req.user!.username });
+      publishWorkflowEvent({ type: 'ticket.updated', ticketId: ticket.id, audience: { roles: ['admin', 'staff'] } });
+      res.json(ticket);
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
+  app.get('/api/canned-replies', requireRole('staff'), async (_req, res) => {
+    try {
+      res.json(await CannedReply.find().sort({ category: 1, title: 1 }));
+    } catch (err) {
+      handleApiError(res, _req, err);
+    }
+  });
+
+  app.post('/api/canned-replies', mutationLimiter, requireAdmin, async (req, res) => {
+    try {
+      const data = cannedReplySchema.parse(req.body);
+      const reply = await CannedReply.create({ ...data, createdBy: req.user!._id });
+      res.status(201).json(reply);
+    } catch (err) {
+      handleApiError(res, req, err);
+    }
+  });
+
+  app.get('/api/admin/reports/customer-satisfaction', requireAdmin, async (_req, res) => {
+    try {
+      const [summary] = await CustomerSatisfaction.aggregate([
+        { $group: { _id: null, responses: { $sum: 1 }, averageScore: { $avg: '$score' }, fiveStar: { $sum: { $cond: [{ $eq: ['$score', 5] }, 1, 0] } } } },
+      ]);
+      const recent = await CustomerSatisfaction.find().sort({ createdAt: -1 }).limit(20).populate('ticketId', 'title').populate('customerId', 'name');
+      res.json({ responses: summary?.responses || 0, averageScore: Number((summary?.averageScore || 0).toFixed(2)), fiveStar: summary?.fiveStar || 0, recent });
+    } catch (err) {
+      handleApiError(res, _req, err);
+    }
+  });
+
+  app.get('/api/admin/knowledge-base', requireAdmin, async (_req, res) => {
+    try {
+      res.json(await KnowledgeBaseArticle.find().sort({ updatedAt: -1 }));
+    } catch (err) {
+      handleApiError(res, _req, err);
+    }
+  });
+
+  app.post('/api/admin/knowledge-base', mutationLimiter, requireAdmin, async (req, res) => {
+    try {
+      const data = knowledgeBaseSchema.parse(req.body);
+      const article = await KnowledgeBaseArticle.create({ ...data, authorId: req.user!._id });
+      res.status(201).json(article);
     } catch (err) {
       handleApiError(res, req, err);
     }

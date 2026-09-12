@@ -51,6 +51,7 @@ export function TicketFormRoute() {
             ticketForm: tkt.ticketForm,
             impact: tkt.impact,
             productFamily: tkt.productFamily,
+            tags: tkt.tags || [],
             attachments: tkt.attachments || [],
             dueDate: tkt.dueDate,
           });

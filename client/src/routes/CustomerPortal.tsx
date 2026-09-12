@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bell, CheckCircle2, Clock3, Plus } from 'lucide-react';
@@ -6,6 +6,7 @@ import { api } from '@/src/api';
 import { Ticket } from '@/src/types';
 import { StatusBadge, PriorityBadge } from '@/src/components/ui/Badge';
 import { formatDate } from '@/src/lib/utils';
+import { useWorkflowEvents } from '@/src/hooks/useWorkflowEvents';
 
 export function CustomerPortal() {
   const queryClient = useQueryClient();
@@ -34,6 +35,12 @@ export function CustomerPortal() {
     mutationFn: api.clearCustomerNotifications,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['customer-notifications'] }),
   });
+  useWorkflowEvents(
+    useCallback(() => {
+      void queryClient.invalidateQueries({ queryKey: ['customer-tickets'] });
+      void queryClient.invalidateQueries({ queryKey: ['customer-notifications'] });
+    }, [queryClient]),
+  );
 
   if (profile.isPending || tickets.isPending)
     return <div className="animate-pulse h-64 bg-surface border border-line rounded-md m-8" />;
@@ -73,6 +80,7 @@ export function CustomerPortal() {
         >
           <Plus className="w-4 h-4" /> Raise a ticket
         </Link>
+        <Link to="/help" className="font-mono text-xs font-bold uppercase underline">Browse help centre</Link>
       </div>
 
       {(notifications.error || markRead.error || deleteNotification.error || clearNotifications.error) && (

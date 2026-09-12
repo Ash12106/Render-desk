@@ -1,4 +1,4 @@
-import { Ticket, Customer, Comment, User, AuditLog, CustomerNotification } from '../types';
+import { Ticket, Customer, Comment, User, AuditLog, CustomerNotification, CannedReply, InternalNote, KnowledgeBaseArticle, SatisfactionResponse, SatisfactionReport } from '../types';
 
 export async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const authUserStr = localStorage.getItem('auth_user');
@@ -141,6 +141,14 @@ export const api = {
       body: JSON.stringify(data),
     });
   },
+  getInternalNotes: (ticketId: string) => fetchJson<InternalNote[]>(`/api/tickets/${ticketId}/internal-notes`),
+  createInternalNote: (ticketId: string, content: string) =>
+    fetchJson<InternalNote>(`/api/tickets/${ticketId}/internal-notes`, { method: 'POST', body: JSON.stringify({ content }) }),
+  escalateTicket: (ticketId: string, reason: string, level?: number) =>
+    fetchJson<Ticket>(`/api/tickets/${ticketId}/escalations`, { method: 'POST', body: JSON.stringify({ reason, level }) }),
+  getCannedReplies: () => fetchJson<CannedReply[]>('/api/canned-replies'),
+  getKnowledgeBase: (search?: string) => fetchJson<KnowledgeBaseArticle[]>(`/api/knowledge-base${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  getCustomerSatisfactionReport: () => fetchJson<SatisfactionReport>('/api/admin/reports/customer-satisfaction'),
 
   login: (data: { username: string; password: string }) => {
     return fetchJson<User>('/api/auth/login', {
@@ -220,6 +228,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ content }),
     }),
+  reopenCustomerTicket: (ticketId: string, reason: string) =>
+    fetchJson<Ticket>(`/api/customer/tickets/${ticketId}/reopen`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  submitCustomerSatisfaction: (ticketId: string, score: number, comment: string) =>
+    fetchJson<SatisfactionResponse>(`/api/customer/tickets/${ticketId}/satisfaction`, { method: 'POST', body: JSON.stringify({ score, comment }) }),
   getCustomerNotifications: () => fetchJson<CustomerNotification[]>('/api/customer/notifications'),
   markCustomerNotificationRead: (id: string) =>
     fetchJson<CustomerNotification>(`/api/customer/notifications/${id}/read`, { method: 'PATCH' }),

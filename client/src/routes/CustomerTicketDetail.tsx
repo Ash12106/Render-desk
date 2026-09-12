@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
@@ -6,11 +6,15 @@ import { api } from '@/src/api';
 import { StatusBadge, PriorityBadge } from '@/src/components/ui/Badge';
 import { formatDate } from '@/src/lib/utils';
 import { Comment } from '@/src/types';
+import { useWorkflowEvents } from '@/src/hooks/useWorkflowEvents';
 
 export function CustomerTicketDetail() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const [newComment, setNewComment] = useState('');
+  const [reopenReason, setReopenReason] = useState('');
+  const [score, setScore] = useState(5);
+  const [feedback, setFeedback] = useState('');
   const tickets = useQuery({
     queryKey: ['customer-tickets'],
     queryFn: api.getCustomerTickets,
@@ -30,6 +34,24 @@ export function CustomerTicketDetail() {
       setNewComment('');
     },
   });
+  const reopenMutation = useMutation({
+    mutationFn: (reason: string) => api.reopenCustomerTicket(id!, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customer-tickets'] });
+      setReopenReason('');
+    },
+  });
+  const satisfactionMutation = useMutation({ mutationFn: () => api.submitCustomerSatisfaction(id!, score, feedback) });
+  useWorkflowEvents(
+    useCallback(
+      (event) => {
+        if (event.ticketId !== id) return;
+        void queryClient.invalidateQueries({ queryKey: ['customer-tickets'] });
+        void queryClient.invalidateQueries({ queryKey: ['customer-ticket-comments', id] });
+      },
+      [id, queryClient],
+    ),
+  );
   if (tickets.isPending) return <div className="animate-pulse h-64 bg-surface border border-line rounded-md m-8" />;
   if (tickets.isError)
     return (
@@ -68,6 +90,45 @@ export function CustomerTicketDetail() {
         <p className="mt-6 text-sm text-ink-muted">
           Our support team will post progress updates here and notify you when the status changes.
         </p>
+        {ticket.status === 'Resolved' && ticket.reopenCount === 0 && (
+          <form
+            className="mt-6 border-2 border-warning bg-warning-bg/30 rounded-md p-4 space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (reopenReason.trim()) reopenMutation.mutate(reopenReason.trim());
+            }}
+          >
+            <h2 className="font-mono text-xs font-bold uppercase">Still need help?</h2>
+            <label htmlFor="reopen-reason" className="sr-only">Reason for reopening</label>
+            <textarea id="reopen-reason" value={reopenReason} onChange={(event) => setReopenReason(event.target.value)} rows={2} placeholder="Tell us what is still unresolved..." className="w-full border border-ink rounded p-2 text-sm" />
+            {reopenMutation.isError && <p role="alert" className="text-sm text-danger">{reopenMutation.error.message}</p>}
+            <button type="submit" disabled={reopenReason.trim().length < 3 || reopenMutation.isPending} className="px-3 py-2 rounded bg-ink text-white text-xs font-mono font-bold uppercase disabled:opacity-50">
+              {reopenMutation.isPending ? 'Reopening...' : 'Reopen ticket'}
+            </button>
+          </form>
+        )}
+        {['Resolved', 'Closed'].includes(ticket.status) && (
+          <form
+            className="mt-6 border-2 border-ink rounded-md p-4 space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              satisfactionMutation.mutate();
+            }}
+          >
+            <h2 className="font-mono text-xs font-bold uppercase">How did we do?</h2>
+            <label htmlFor="satisfaction-score" className="text-sm">Rate your support experience</label>
+            <select id="satisfaction-score" value={score} onChange={(event) => setScore(Number(event.target.value))} className="ml-2 border border-ink rounded p-1 text-sm">
+              {[5, 4, 3, 2, 1].map((value) => <option key={value} value={value}>{value} / 5</option>)}
+            </select>
+            <label htmlFor="satisfaction-comment" className="sr-only">Feedback comment</label>
+            <textarea id="satisfaction-comment" value={feedback} onChange={(event) => setFeedback(event.target.value)} rows={2} placeholder="Optional feedback" className="w-full border border-ink rounded p-2 text-sm" />
+            {satisfactionMutation.isError && <p role="alert" className="text-sm text-danger">{satisfactionMutation.error.message}</p>}
+            {satisfactionMutation.isSuccess && <p role="status" className="text-sm text-success">Thank you for your feedback.</p>}
+            <button type="submit" disabled={satisfactionMutation.isPending} className="px-3 py-2 rounded bg-ink text-white text-xs font-mono font-bold uppercase disabled:opacity-50">
+              {satisfactionMutation.isPending ? 'Saving...' : 'Send feedback'}
+            </button>
+          </form>
+        )}
       </article>
       <section className="bg-surface border-2 border-ink rounded-md p-6 md:p-8">
         <div className="mb-5">

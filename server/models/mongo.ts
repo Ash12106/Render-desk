@@ -98,8 +98,15 @@ const ticketSchema = new mongoose.Schema(
       default: 'No Impact',
     },
     productFamily: { type: String, default: '' },
+    tags: { type: [String], default: [], index: true },
     attachments: { type: [ticketAttachmentSchema], default: [] },
     dueDate: { type: Date },
+    slaDueAt: { type: Date, default: null, index: true },
+    slaBreachedAt: { type: Date, default: null },
+    escalationLevel: { type: Number, default: 0, min: 0, max: 3, index: true },
+    escalationReason: { type: String, default: '' },
+    escalatedAt: { type: Date, default: null },
+    reopenCount: { type: Number, default: 0, min: 0 },
     deletedAt: { type: Date, default: null },
     assignedGroup: { type: String, default: '', index: true },
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
@@ -144,6 +151,93 @@ commentSchema.set('toJSON', {
 });
 
 export const Comment = mongoose.model('Comment', commentSchema);
+
+const internalNoteSchema = new mongoose.Schema(
+  {
+    ticketId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ticket', required: true, index: true },
+    authorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    author: { type: String, required: true },
+    content: { type: String, required: true, maxlength: 10_000 },
+  },
+  { timestamps: true },
+);
+
+internalNoteSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret: any) => {
+    ret.id = ret._id.toString();
+    delete ret._id;
+    delete ret.__v;
+  },
+});
+
+export const InternalNote = mongoose.model('InternalNote', internalNoteSchema);
+
+const cannedReplySchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true, trim: true, maxlength: 120 },
+    content: { type: String, required: true, trim: true, maxlength: 10_000 },
+    category: { type: String, default: 'General', trim: true, maxlength: 60 },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  },
+  { timestamps: true },
+);
+
+cannedReplySchema.index({ title: 1 }, { unique: true });
+cannedReplySchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret: any) => {
+    ret.id = ret._id.toString();
+    delete ret._id;
+    delete ret.__v;
+  },
+});
+
+export const CannedReply = mongoose.model('CannedReply', cannedReplySchema);
+
+const satisfactionSchema = new mongoose.Schema(
+  {
+    ticketId: { type: mongoose.Schema.Types.ObjectId, ref: 'Ticket', required: true, unique: true, index: true },
+    customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true, index: true },
+    score: { type: Number, required: true, min: 1, max: 5 },
+    comment: { type: String, default: '', maxlength: 2_000 },
+  },
+  { timestamps: true },
+);
+
+satisfactionSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret: any) => {
+    ret.id = ret._id.toString();
+    delete ret._id;
+    delete ret.__v;
+  },
+});
+
+export const CustomerSatisfaction = mongoose.model('CustomerSatisfaction', satisfactionSchema);
+
+const knowledgeBaseArticleSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true, trim: true, maxlength: 180, index: true },
+    summary: { type: String, required: true, trim: true, maxlength: 500 },
+    content: { type: String, required: true, trim: true, maxlength: 20_000 },
+    category: { type: String, default: 'General', trim: true, maxlength: 60, index: true },
+    published: { type: Boolean, default: false, index: true },
+    authorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  },
+  { timestamps: true },
+);
+
+knowledgeBaseArticleSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret: any) => {
+    ret.id = ret._id.toString();
+    delete ret._id;
+    delete ret.__v;
+  },
+});
+
+export const KnowledgeBaseArticle = mongoose.model('KnowledgeBaseArticle', knowledgeBaseArticleSchema);
 
 const auditLogSchema = new mongoose.Schema(
   {
@@ -308,6 +402,16 @@ async function runMigrations() {
       up: async () => {
         const passwordHash = await bcrypt.hash(adminPassword, 12);
         await User.updateOne({ username: 'admin' }, { $set: { passwordHash, role: 'admin' } });
+      },
+    },
+    {
+      name: '007_add_ticket_workflow_fields',
+      up: async () => {
+        await Ticket.updateMany({ tags: { $exists: false } }, { $set: { tags: [] } });
+        await Ticket.updateMany(
+          { escalationLevel: { $exists: false } },
+          { $set: { escalationLevel: 0, escalationReason: '', escalatedAt: null, reopenCount: 0, slaBreachedAt: null } },
+        );
       },
     },
   ];
