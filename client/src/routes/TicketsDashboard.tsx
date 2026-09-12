@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -26,6 +26,7 @@ import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, Legend, Resp
 import { AlertCircle, Clock, CheckSquare, Paperclip } from 'lucide-react';
 import { useToast } from '@/src/components/ui/Toast';
 import { getStoredAuthUser } from '@/src/lib/auth';
+import { useWorkflowEvents } from '@/src/hooks/useWorkflowEvents';
 
 const COLORS = ['#17202b', '#4a5568', '#a0aec0', '#e2e8f0'];
 const PRIORITY_COLORS = {
@@ -133,6 +134,12 @@ export function TicketsDashboard() {
     queryFn: api.getTicketStats,
     refetchInterval: DASHBOARD_REFRESH_INTERVAL,
   });
+  useWorkflowEvents(
+    useCallback(() => {
+      void queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      void queryClient.invalidateQueries({ queryKey: ['ticket-stats'] });
+    }, [queryClient]),
+  );
   const bulkStatusMutation = useMutation({
     mutationFn: ({ ticketIds, newStatus }: { ticketIds: string[]; newStatus: Ticket['status'] }) =>
       api.updateBulkStatus(ticketIds, newStatus),
@@ -1029,22 +1036,22 @@ export function TicketsDashboard() {
                               )}
                             </td>
                             <td className="p-4">
-                              {ticket.status !== 'Resolved' && ticket.status !== 'Closed' && ticket.dueDate ? (
+                              {ticket.status !== 'Resolved' && ticket.status !== 'Closed' && (ticket.slaDueAt || ticket.dueDate) ? (
                                 <div
                                   className={`flex items-center gap-1.5 font-mono text-xs font-bold ${
-                                    getSlaStatus(ticket.dueDate) === 'overdue'
+                                    getSlaStatus(ticket.slaDueAt || ticket.dueDate!) === 'overdue'
                                       ? 'text-danger'
-                                      : getSlaStatus(ticket.dueDate) === 'warning'
+                                      : getSlaStatus(ticket.slaDueAt || ticket.dueDate!) === 'warning'
                                         ? 'text-warning'
                                         : 'text-ink-muted'
                                   }`}
                                 >
-                                  {getSlaStatus(ticket.dueDate) === 'overdue' ? (
+                                  {getSlaStatus(ticket.slaDueAt || ticket.dueDate!) === 'overdue' ? (
                                     <AlertCircle className="w-4 h-4" />
                                   ) : (
                                     <Clock className="w-4 h-4" />
                                   )}
-                                  {formatDate(ticket.dueDate)}
+                                  {ticket.slaDueAt ? `SLA ${formatDate(ticket.slaDueAt)}` : formatDate(ticket.dueDate!)}
                                 </div>
                               ) : (
                                 <span className="font-mono text-xs text-ink-muted/50">—</span>

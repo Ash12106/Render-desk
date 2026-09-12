@@ -270,22 +270,22 @@ export function TicketDetail() {
                   {ticket.assignedStaffName ? ` · ${ticket.assignedStaffName}` : ''}
                 </span>
               )}
-              {ticket.dueDate && ticket.status !== 'Resolved' && ticket.status !== 'Closed' && (
+              {(ticket.slaDueAt || ticket.dueDate) && ticket.status !== 'Resolved' && ticket.status !== 'Closed' && (
                 <div
                   className={`flex items-center gap-1.5 font-mono text-xs font-bold px-3 py-1 rounded-md border-2 ${
-                    getSlaStatus(ticket.dueDate) === 'overdue'
+                    getSlaStatus(ticket.slaDueAt || ticket.dueDate!) === 'overdue'
                       ? 'bg-danger-bg border-danger text-danger'
-                      : getSlaStatus(ticket.dueDate) === 'warning'
+                      : getSlaStatus(ticket.slaDueAt || ticket.dueDate!) === 'warning'
                         ? 'bg-warning-bg border-warning text-warning'
                         : 'bg-canvas border-ink text-ink-muted'
                   }`}
                 >
-                  {getSlaStatus(ticket.dueDate) === 'overdue' ? (
+                  {getSlaStatus(ticket.slaDueAt || ticket.dueDate!) === 'overdue' ? (
                     <AlertCircle className="w-4 h-4" />
                   ) : (
                     <Clock className="w-4 h-4" />
                   )}
-                  Due {formatDate(ticket.dueDate)}
+                  {ticket.slaDueAt ? `SLA due ${formatDate(ticket.slaDueAt)}` : `Follow-up ${formatDate(ticket.dueDate!)}`}
                 </div>
               )}
             </div>

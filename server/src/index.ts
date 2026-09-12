@@ -760,6 +760,11 @@ export async function buildApp() {
         { returnDocument: 'after' },
       ).populate('assignedTo', 'displayName username team branch');
       if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found.', data: null });
+      publishWorkflowEvent({
+        type: 'ticket.updated',
+        ticketId: ticket.id,
+        audience: { roles: ['admin', 'staff'], userId: assignedTo || undefined },
+      });
       res.json(ticket);
     } catch (err) {
       handleApiError(res, req, err);
@@ -821,6 +826,13 @@ export async function buildApp() {
         { _id: { $in: objectIds }, deletedAt: null },
         { $set: { assignedTo: staff._id, assignedGroup: staff.team || '' } },
       );
+      objectIds.forEach((ticketId) => {
+        publishWorkflowEvent({
+          type: 'ticket.updated',
+          ticketId: ticketId.toString(),
+          audience: { roles: ['admin', 'staff'], userId: staff._id.toString() },
+        });
+      });
       res.json({ success: true, assignedCount: result.modifiedCount, assignedGroup: staff.team || '' });
     } catch (err) {
       handleApiError(res, req, err);

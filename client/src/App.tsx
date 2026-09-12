@@ -26,6 +26,7 @@ import { getStoredAuthUser } from './lib/auth';
 import { ForgotPassword, ResetPassword } from './routes/PasswordReset';
 import { KnowledgeBase } from './routes/KnowledgeBase';
 import { CustomerSatisfactionReport } from './routes/CustomerSatisfactionReport';
+import { WorkflowLibrary } from './routes/WorkflowLibrary';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const authUser = getStoredAuthUser();
@@ -106,6 +107,14 @@ export default function App() {
               element={
                 <AdminRoute>
                   <CustomerSatisfactionReport />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="workflow-library"
+              element={
+                <AdminRoute>
+                  <WorkflowLibrary />
                 </AdminRoute>
               }
             />
