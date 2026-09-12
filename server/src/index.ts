@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import {
   connectMongoDB,
   getMongoConnectionState,
@@ -13,18 +12,18 @@ import {
   Notification,
   DeletedTicket,
   PasswordResetToken,
-} from './mongo.js';
+} from '../models/mongo.js';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import cors from 'cors';
 import helmet from 'helmet';
-import krawlRouter from './krawl.js';
+import krawlRouter from '../routes/krawl.js';
 import rateLimit from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
 import { OAuth2Client } from 'google-auth-library';
 import { queueCustomerStatusNotification, simulateStatusChangeNotification } from './notifications.js';
-import { assertValidStatusTransition } from './status.js';
+import { assertValidStatusTransition } from '../controllers/ticketStatusController.js';
 import crypto from 'node:crypto';
 import nodemailer from 'nodemailer';
 
@@ -32,10 +31,18 @@ const PORT = Number(process.env.PORT) || 3000;
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
 const googleClient = new OAuth2Client(googleClientId);
 const passwordResetEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
-const appBaseUrl = (process.env.APP_BASE_URL || process.env.CORS_ORIGIN || `http://localhost:${PORT}`).replace(
-  /\/$/,
-  '',
-);
+let activePort = PORT;
+
+function getAppBaseUrl() {
+  const configuredBaseUrl = process.env.APP_BASE_URL || process.env.CORS_ORIGIN;
+  const defaultLocalUrl = `http://localhost:${PORT}`;
+  // Keep local password-reset links on the actual development port when the
+  // default port is already occupied and startup selects the fallback port.
+  if (configuredBaseUrl && !(activePort !== PORT && configuredBaseUrl.replace(/\/$/, '') === defaultLocalUrl)) {
+    return configuredBaseUrl.replace(/\/$/, '');
+  }
+  return `http://localhost:${activePort}`;
+}
 
 function createMailer() {
   const host = process.env.SMTP_HOST;
@@ -324,7 +331,7 @@ export async function buildApp() {
         expiresAt: new Date(Date.now() + 60 * 60 * 1000),
       });
 
-      const resetUrl = `${appBaseUrl}/reset-password?token=${rawToken}`;
+      const resetUrl = `${getAppBaseUrl()}/reset-password?token=${rawToken}`;
       const safeResetUrl = escapeHtml(resetUrl);
       try {
         await createMailer().sendMail({
@@ -1606,27 +1613,49 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
+    const clientRoot = path.resolve(process.cwd(), '../client');
     const vite = await createViteServer({
+      root: clientRoot,
+      configFile: path.join(clientRoot, 'vite.config.ts'),
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = process.env.CLIENT_DIST_DIR || path.resolve(process.cwd(), '../client/dist');
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  const listen = (port: number) =>
+    new Promise<void>((resolve, reject) => {
+      const server = app.listen(port, '0.0.0.0');
+      server.once('listening', resolve);
+      server.once('error', reject);
+    });
+
+  try {
+    await listen(PORT);
+  } catch (error: unknown) {
+    const addressInUse = (error as NodeJS.ErrnoException).code === 'EADDRINUSE';
+    const canUseFallback = process.env.NODE_ENV !== 'production' && process.env.PORT_FALLBACK_DISABLED !== 'true';
+    if (!addressInUse || !canUseFallback) throw error;
+
+    activePort = PORT + 1;
+    console.warn(`Port ${PORT} is already in use. Starting the development server on ${activePort} instead.`);
+    await listen(activePort);
+  }
+
+  console.log(`Server running on http://localhost:${activePort}`);
 }
 
 if (process.env.VITEST !== 'true') {
-  startServer().catch(async () => {
-    console.error('Server startup failed. Check MongoDB configuration, replica-set support, and network access.');
+  startServer().catch(async (error: unknown) => {
+    const reason = error instanceof Error ? error.message : 'Unknown startup error.';
+    console.error(`Server startup failed: ${reason}`);
     await mongoose.disconnect();
     process.exitCode = 1;
   });

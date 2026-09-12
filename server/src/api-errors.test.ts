@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import mongoose from 'mongoose';
 import { buildApp } from './index';
-import { User, Ticket, AuditLog } from './mongo';
+import { User, Ticket, AuditLog } from '../models/mongo';
 
 let app: Awaited<ReturnType<typeof buildApp>>;
 beforeAll(async () => {

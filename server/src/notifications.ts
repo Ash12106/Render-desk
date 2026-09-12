@@ -1,4 +1,4 @@
-import { Notification } from './mongo.js';
+import { Notification } from '../models/mongo.js';
 import type mongoose from 'mongoose';
 
 export interface StatusChangeNotification {

@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { faker } from '@faker-js/faker';
 import mongoose from 'mongoose';
-import { connectMongoDB, AuditLog, Comment, Customer, Ticket } from './mongo.js';
+import { connectMongoDB, AuditLog, Comment, Customer, Ticket } from '../models/mongo.js';
 
 async function seed() {
   await connectMongoDB();

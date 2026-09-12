@@ -1,15 +1,17 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { CheckCircle2, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, X } from 'lucide-react';
+
+type ToastType = 'success' | 'info' | 'error';
 
 interface Toast {
   id: string;
   message: string;
-  type?: 'success' | 'info';
+  type?: ToastType;
 }
 
 interface ToastContextType {
-  showToast: (message: string, type?: 'success' | 'info') => void;
+  showToast: (message: string, type?: ToastType) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -17,7 +19,7 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const showToast = (message: string, type: 'success' | 'info' = 'success') => {
+  const showToast = (message: string, type: ToastType = 'success') => {
     const id = Math.random().toString(36).substring(7);
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
@@ -39,6 +41,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               className="bg-surface border border-line shadow-lg rounded-md p-4 flex items-center gap-3 w-80"
             >
               {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-success shrink-0" />}
+              {toast.type === 'error' && <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />}
               <span className="text-sm font-medium text-ink flex-1">{toast.message}</span>
               <button
                 onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}

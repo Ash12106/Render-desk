@@ -8,7 +8,7 @@ vi.hoisted(() => {
   process.env.KRAWL_DASHBOARD_PASSWORD = 'unit-test-password';
 });
 vi.mock('axios', () => ({ default: { create: vi.fn(() => upstream) } }));
-import router from './krawl';
+import router from '../routes/krawl';
 
 function app(role = 'admin') {
   const instance = express();

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { buildApp } from './index.js';
 import mongoose from 'mongoose';
-import { User, Customer, Ticket, Comment, DeletedTicket, AuditLog, Notification } from './mongo.js';
+import { User, Customer, Ticket, Comment, DeletedTicket, AuditLog, Notification } from '../models/mongo.js';
 import bcrypt from 'bcryptjs';
 
 const testMongoUri = process.env.TEST_MONGODB_URI;

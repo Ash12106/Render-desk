@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertValidStatusTransition, isValidStatusTransition } from './status.js';
+import { assertValidStatusTransition, isValidStatusTransition } from '../controllers/ticketStatusController.js';
 
 describe('ticket status transitions', () => {
   it('allows the supported forward workflow', () => {

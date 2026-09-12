@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import mongoose from 'mongoose';
-import { connectMongoDB } from './mongo';
+import { connectMongoDB } from '../models/mongo';
 
 afterEach(() => {
   vi.restoreAllMocks();
