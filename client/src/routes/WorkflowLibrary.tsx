@@ -9,6 +9,7 @@ export function WorkflowLibrary() {
   const articles = useQuery({ queryKey: ['admin-knowledge-base'], queryFn: api.getAdminKnowledgeBase });
   const [reply, setReply] = useState({ title: '', category: 'General', content: '' });
   const [article, setArticle] = useState({ title: '', category: 'General', summary: '', content: '', published: true });
+  const [articleValidationError, setArticleValidationError] = useState('');
   const createReply = useMutation({
     mutationFn: api.createCannedReply,
     onSuccess: () => {
@@ -20,10 +21,20 @@ export function WorkflowLibrary() {
     mutationFn: api.createKnowledgeBaseArticle,
     onSuccess: () => {
       setArticle({ title: '', category: 'General', summary: '', content: '', published: true });
+      setArticleValidationError('');
       void queryClient.invalidateQueries({ queryKey: ['admin-knowledge-base'] });
     },
   });
   const error = createReply.error || createArticle.error;
+  const submitArticle = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (article.title.trim().length < 3) return setArticleValidationError('Title must be at least 3 characters.');
+    if (article.summary.trim().length < 10) return setArticleValidationError('Short summary must be at least 10 characters.');
+    if (article.content.trim().length < 20)
+      return setArticleValidationError('Article content must be at least 20 characters so customers receive a useful answer.');
+    setArticleValidationError('');
+    createArticle.mutate(article);
+  };
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 px-4 pb-16">
@@ -46,11 +57,14 @@ export function WorkflowLibrary() {
         </section>
         <section className="rounded-md border-2 border-ink bg-surface p-5">
           <div className="mb-5 flex items-center gap-2"><BookOpen className="h-5 w-5" /><h2 className="font-mono text-xs font-bold uppercase tracking-[0.2em]">Knowledge base</h2></div>
-          <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); createArticle.mutate(article); }}>
-            <label className="block text-sm font-bold">Title<input required value={article.title} onChange={(event) => setArticle({ ...article, title: event.target.value })} className="mt-1 w-full rounded border-2 border-ink p-2" placeholder="Example: Reset your account password" /></label>
+          <form className="space-y-3" onSubmit={submitArticle} noValidate>
+            <label className="block text-sm font-bold">Title<input required minLength={3} value={article.title} onChange={(event) => setArticle({ ...article, title: event.target.value })} className="mt-1 w-full rounded border-2 border-ink p-2" placeholder="Example: Reset your account password" /></label>
             <label className="block text-sm font-bold">Category<input required value={article.category} onChange={(event) => setArticle({ ...article, category: event.target.value })} className="mt-1 w-full rounded border-2 border-ink p-2" /></label>
-            <label className="block text-sm font-bold">Short summary<textarea required rows={2} value={article.summary} onChange={(event) => setArticle({ ...article, summary: event.target.value })} className="mt-1 w-full rounded border-2 border-ink p-2" /></label>
-            <label className="block text-sm font-bold">Article content<textarea required rows={4} value={article.content} onChange={(event) => setArticle({ ...article, content: event.target.value })} className="mt-1 w-full rounded border-2 border-ink p-2" /></label>
+            <label className="block text-sm font-bold">Short summary<textarea required minLength={10} rows={2} value={article.summary} onChange={(event) => setArticle({ ...article, summary: event.target.value })} className="mt-1 w-full rounded border-2 border-ink p-2" aria-describedby="summary-help" /></label>
+            <p id="summary-help" className="-mt-2 text-xs text-ink-muted">At least 10 characters.</p>
+            <label className="block text-sm font-bold">Article content<textarea required minLength={20} rows={4} value={article.content} onChange={(event) => setArticle({ ...article, content: event.target.value })} className="mt-1 w-full rounded border-2 border-ink p-2" aria-describedby="content-help" /></label>
+            <p id="content-help" className="-mt-2 text-xs text-ink-muted">At least 20 characters. Explain the steps or answer customers need.</p>
+            {articleValidationError && <p role="alert" className="rounded border border-danger bg-danger-bg p-3 text-sm text-danger">{articleValidationError}</p>}
             <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={article.published} onChange={(event) => setArticle({ ...article, published: event.target.checked })} /> Publish for customers</label>
             <button disabled={createArticle.isPending} className="rounded bg-ink px-4 py-2 font-mono text-xs font-bold uppercase text-white disabled:opacity-50">{createArticle.isPending ? 'Saving...' : 'Add help article'}</button>
           </form>
