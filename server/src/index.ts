@@ -150,7 +150,10 @@ const escalationSchema = z.object({
   reason: z.string().trim().min(3).max(500),
   level: z.coerce.number().int().min(1).max(MAX_ESCALATION_LEVEL).optional(),
 });
-const satisfactionSchema = z.object({ score: z.coerce.number().int().min(1).max(5), comment: z.string().trim().max(2_000).default('') });
+const satisfactionSchema = z.object({
+  score: z.coerce.number().int().min(1).max(5),
+  comment: z.string().trim().max(2_000).default(''),
+});
 const knowledgeBaseSchema = z.object({
   title: z.string().trim().min(3).max(180),
   summary: z.string().trim().min(10).max(500),
@@ -281,7 +284,8 @@ export async function buildApp() {
     try {
       const search = z.string().trim().max(100).optional().parse(req.query.search);
       const filter: Record<string, unknown> = { published: true };
-      if (search) filter.$or = [{ title: { $regex: search, $options: 'i' } }, { summary: { $regex: search, $options: 'i' } }];
+      if (search)
+        filter.$or = [{ title: { $regex: search, $options: 'i' } }, { summary: { $regex: search, $options: 'i' } }];
       const articles = await KnowledgeBaseArticle.find(filter).sort({ updatedAt: -1 }).limit(50);
       res.json(articles);
     } catch (err) {
@@ -496,30 +500,31 @@ export async function buildApp() {
     }
   });
 
-  const passwordLogin = (allowedRoles: Array<'admin' | 'staff' | 'customer'>, signInLabel: string) =>
+  const passwordLogin =
+    (allowedRoles: Array<'admin' | 'staff' | 'customer'>, signInLabel: string) =>
     async (req: express.Request, res: express.Response) => {
-    try {
-      const { username, password } = passwordLoginSchema.parse(req.body);
-      const user = await User.findOne({ username });
-      if (!user) {
-        return res.status(401).json({ success: false, message: 'Invalid credentials', data: null });
+      try {
+        const { username, password } = passwordLoginSchema.parse(req.body);
+        const user = await User.findOne({ username });
+        if (!user) {
+          return res.status(401).json({ success: false, message: 'Invalid credentials', data: null });
+        }
+        const isMatch = await bcrypt.compare(password, user.passwordHash);
+        if (!isMatch) {
+          return res.status(401).json({ success: false, message: 'Invalid credentials', data: null });
+        }
+        if (!allowedRoles.includes(user.role as 'admin' | 'staff' | 'customer')) {
+          return res.status(403).json({
+            success: false,
+            message: `This sign-in is for ${signInLabel} accounts only.`,
+            data: null,
+          });
+        }
+        res.json(user);
+      } catch (err) {
+        handleApiError(res, req, err);
       }
-      const isMatch = await bcrypt.compare(password, user.passwordHash);
-      if (!isMatch) {
-        return res.status(401).json({ success: false, message: 'Invalid credentials', data: null });
-      }
-      if (!allowedRoles.includes(user.role as 'admin' | 'staff' | 'customer')) {
-        return res.status(403).json({
-          success: false,
-          message: `This sign-in is for ${signInLabel} accounts only.`,
-          data: null,
-        });
-      }
-      res.json(user);
-    } catch (err) {
-      handleApiError(res, req, err);
-    }
-  };
+    };
 
   // Keep customer and staff credentials on separate entry points. Role checks
   // occur before a browser session is returned, not only after navigation.
@@ -1045,15 +1050,39 @@ export async function buildApp() {
       const { reason } = z.object({ reason: z.string().trim().min(3).max(500) }).parse(req.body);
       const ticket = await Ticket.findOne({ _id: req.params.id, customerId: req.user!.customerId, deletedAt: null });
       if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found.', data: null });
-      if (ticket.status !== 'Resolved') return res.status(409).json({ success: false, message: 'Only resolved tickets can be reopened. Closed tickets require an escalation request.', data: null });
-      if (ticket.reopenCount >= 1) return res.status(409).json({ success: false, message: 'This ticket has already been reopened once. Please contact support for further help.', data: null });
+      if (ticket.status !== 'Resolved')
+        return res.status(409).json({
+          success: false,
+          message: 'Only resolved tickets can be reopened. Closed tickets require an escalation request.',
+          data: null,
+        });
+      if (ticket.reopenCount >= 1)
+        return res.status(409).json({
+          success: false,
+          message: 'This ticket has already been reopened once. Please contact support for further help.',
+          data: null,
+        });
       await withTransaction(async (session) => {
         ticket.status = 'In Progress';
         ticket.reopenCount += 1;
         await ticket.save({ session });
-        await AuditLog.create([{ ticketId: ticket._id, action: 'REOPENED', details: `Customer reopened ticket: ${reason}`, author: req.user!.username }], { session });
+        await AuditLog.create(
+          [
+            {
+              ticketId: ticket._id,
+              action: 'REOPENED',
+              details: `Customer reopened ticket: ${reason}`,
+              author: req.user!.username,
+            },
+          ],
+          { session },
+        );
       });
-      publishWorkflowEvent({ type: 'ticket.updated', ticketId: ticket.id, audience: { roles: ['admin', 'staff'], customerId: ticket.customerId.toString() } });
+      publishWorkflowEvent({
+        type: 'ticket.updated',
+        ticketId: ticket.id,
+        audience: { roles: ['admin', 'staff'], customerId: ticket.customerId.toString() },
+      });
       res.json(ticket);
     } catch (err) {
       handleApiError(res, req, err);
@@ -1065,13 +1094,21 @@ export async function buildApp() {
       const data = satisfactionSchema.parse(req.body);
       const ticket = await Ticket.findOne({ _id: req.params.id, customerId: req.user!.customerId, deletedAt: null });
       if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found.', data: null });
-      if (!['Resolved', 'Closed'].includes(ticket.status)) return res.status(409).json({ success: false, message: 'Feedback is available after a ticket is resolved.', data: null });
+      if (!['Resolved', 'Closed'].includes(ticket.status))
+        return res
+          .status(409)
+          .json({ success: false, message: 'Feedback is available after a ticket is resolved.', data: null });
       const feedback = await CustomerSatisfaction.findOneAndUpdate(
         { ticketId: ticket._id },
         { customerId: ticket.customerId, score: data.score, comment: data.comment },
         { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
       );
-      await AuditLog.create({ ticketId: ticket._id, action: 'SATISFACTION_RECORDED', details: `Customer satisfaction score: ${data.score}/5`, author: req.user!.username });
+      await AuditLog.create({
+        ticketId: ticket._id,
+        action: 'SATISFACTION_RECORDED',
+        details: `Customer satisfaction score: ${data.score}/5`,
+        author: req.user!.username,
+      });
       publishWorkflowEvent({ type: 'feedback.created', ticketId: ticket.id, audience: { roles: ['admin'] } });
       res.status(201).json(feedback);
     } catch (err) {
@@ -1363,7 +1400,11 @@ export async function buildApp() {
       notificationEvents.forEach((event) => {
         simulateStatusChangeNotification(event);
         void deliverCustomerStatusEmail(event);
-        publishWorkflowEvent({ type: 'notification.created', ticketId: event.ticketId, audience: { customerId: event.customerId } });
+        publishWorkflowEvent({
+          type: 'notification.created',
+          ticketId: event.ticketId,
+          audience: { customerId: event.customerId },
+        });
       });
 
       res.json({ success: true, updatedCount: objectIds.length });
@@ -1480,7 +1521,11 @@ export async function buildApp() {
         });
       }
 
-      publishWorkflowEvent({ type: 'ticket.updated', ticketId: ticket.id.toString(), audience: { roles: ['admin', 'staff'] } });
+      publishWorkflowEvent({
+        type: 'ticket.updated',
+        ticketId: ticket.id.toString(),
+        audience: { roles: ['admin', 'staff'] },
+      });
 
       const json = ticket.toJSON();
       res.json({
@@ -1652,8 +1697,18 @@ export async function buildApp() {
       if (req.user!.role === 'staff') ticketFilter.assignedTo = req.user!._id;
       const ticket = await Ticket.findOne(ticketFilter);
       if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found.', data: null });
-      const note = await InternalNote.create({ ticketId: ticket._id, authorId: req.user!._id, author: req.user!.username, content: data.content });
-      await AuditLog.create({ ticketId: ticket._id, action: 'INTERNAL_NOTE_ADDED', details: 'Added internal staff note', author: req.user!.username });
+      const note = await InternalNote.create({
+        ticketId: ticket._id,
+        authorId: req.user!._id,
+        author: req.user!.username,
+        content: data.content,
+      });
+      await AuditLog.create({
+        ticketId: ticket._id,
+        action: 'INTERNAL_NOTE_ADDED',
+        details: 'Added internal staff note',
+        author: req.user!.username,
+      });
       publishWorkflowEvent({ type: 'ticket.updated', ticketId: ticket.id, audience: { roles: ['admin', 'staff'] } });
       res.status(201).json(note);
     } catch (err) {
@@ -1668,15 +1723,24 @@ export async function buildApp() {
       if (req.user!.role === 'staff') ticketFilter.assignedTo = req.user!._id;
       const ticket = await Ticket.findOne(ticketFilter);
       if (!ticket) return res.status(404).json({ success: false, message: 'Ticket not found.', data: null });
-      if (ticket.status === 'Closed') return res.status(409).json({ success: false, message: 'Closed tickets cannot be escalated.', data: null });
+      if (ticket.status === 'Closed')
+        return res.status(409).json({ success: false, message: 'Closed tickets cannot be escalated.', data: null });
       const level = data.level || Math.min(ticket.escalationLevel + 1, MAX_ESCALATION_LEVEL);
-      if (level <= ticket.escalationLevel) return res.status(409).json({ success: false, message: 'This ticket is already at the requested escalation level.', data: null });
+      if (level <= ticket.escalationLevel)
+        return res
+          .status(409)
+          .json({ success: false, message: 'This ticket is already at the requested escalation level.', data: null });
       ticket.escalationLevel = level;
       ticket.escalationReason = data.reason;
       ticket.escalatedAt = new Date();
       if (ticket.priority !== 'Critical') ticket.priority = 'Critical';
       await ticket.save();
-      await AuditLog.create({ ticketId: ticket._id, action: 'ESCALATED', details: `Escalated to level ${level}: ${data.reason}`, author: req.user!.username });
+      await AuditLog.create({
+        ticketId: ticket._id,
+        action: 'ESCALATED',
+        details: `Escalated to level ${level}: ${data.reason}`,
+        author: req.user!.username,
+      });
       publishWorkflowEvent({ type: 'ticket.updated', ticketId: ticket.id, audience: { roles: ['admin', 'staff'] } });
       res.json(ticket);
     } catch (err) {
@@ -1705,10 +1769,26 @@ export async function buildApp() {
   app.get('/api/admin/reports/customer-satisfaction', requireAdmin, async (_req, res) => {
     try {
       const [summary] = await CustomerSatisfaction.aggregate([
-        { $group: { _id: null, responses: { $sum: 1 }, averageScore: { $avg: '$score' }, fiveStar: { $sum: { $cond: [{ $eq: ['$score', 5] }, 1, 0] } } } },
+        {
+          $group: {
+            _id: null,
+            responses: { $sum: 1 },
+            averageScore: { $avg: '$score' },
+            fiveStar: { $sum: { $cond: [{ $eq: ['$score', 5] }, 1, 0] } },
+          },
+        },
       ]);
-      const recent = await CustomerSatisfaction.find().sort({ createdAt: -1 }).limit(20).populate('ticketId', 'title').populate('customerId', 'name');
-      res.json({ responses: summary?.responses || 0, averageScore: Number((summary?.averageScore || 0).toFixed(2)), fiveStar: summary?.fiveStar || 0, recent });
+      const recent = await CustomerSatisfaction.find()
+        .sort({ createdAt: -1 })
+        .limit(20)
+        .populate('ticketId', 'title')
+        .populate('customerId', 'name');
+      res.json({
+        responses: summary?.responses || 0,
+        averageScore: Number((summary?.averageScore || 0).toFixed(2)),
+        fiveStar: summary?.fiveStar || 0,
+        recent,
+      });
     } catch (err) {
       handleApiError(res, _req, err);
     }

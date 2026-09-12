@@ -189,7 +189,10 @@ export function TicketForm({
       category: formData.category || 'Technical',
       assignmentType: formData.assignmentType || 'Incident',
       impact: formData.impact || 'No Impact',
-      tags: (formData.tags || []).map((tag) => tag.trim().toLowerCase()).filter(Boolean).slice(0, 12),
+      tags: (formData.tags || [])
+        .map((tag) => tag.trim().toLowerCase())
+        .filter(Boolean)
+        .slice(0, 12),
       attachments: (formData.attachments || []).filter((attachment) => attachment.size > 0).slice(0, 5),
     };
     const errs = validate(payload);
@@ -572,7 +575,10 @@ export function TicketForm({
               onChange={(event) =>
                 handleChange(
                   'tags',
-                  event.target.value.split(',').map((tag) => tag.trim()).filter(Boolean),
+                  event.target.value
+                    .split(',')
+                    .map((tag) => tag.trim())
+                    .filter(Boolean),
                 )
               }
               placeholder="Example: login, urgent, mobile"
@@ -580,7 +586,9 @@ export function TicketForm({
               className="w-full bg-surface border-2 border-ink rounded-md px-4 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-ink/20 text-ink"
               aria-describedby="tags-help"
             />
-            <p id="tags-help" className="mt-1 text-xs text-ink-muted">Separate up to 12 short labels with commas.</p>
+            <p id="tags-help" className="mt-1 text-xs text-ink-muted">
+              Separate up to 12 short labels with commas.
+            </p>
           </div>
 
           <div className="sm:col-span-2 md:col-span-3 border-2 border-dashed border-ink rounded-md p-4 bg-surface-muted/20">

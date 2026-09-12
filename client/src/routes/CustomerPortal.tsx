@@ -80,7 +80,9 @@ export function CustomerPortal() {
         >
           <Plus className="w-4 h-4" /> Raise a ticket
         </Link>
-        <Link to="/help" className="font-mono text-xs font-bold uppercase underline">Browse help centre</Link>
+        <Link to="/help" className="font-mono text-xs font-bold uppercase underline">
+          Browse help centre
+        </Link>
       </div>
 
       {(notifications.error || markRead.error || deleteNotification.error || clearNotifications.error) && (

@@ -16,7 +16,9 @@ export function requireRole(role: 'staff' | 'customer') {
     const userRole = req.user?.role;
     const allowed = role === 'staff' ? userRole === 'staff' || userRole === 'admin' : userRole === role;
     if (!allowed) {
-      return res.status(403).json({ success: false, message: 'This account does not have access to this area.', data: null });
+      return res
+        .status(403)
+        .json({ success: false, message: 'This account does not have access to this area.', data: null });
     }
     next();
   };

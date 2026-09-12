@@ -17,8 +17,11 @@
     "clean": "npm run clean --workspace=client && npm run clean --workspace=server",
     "lint": "npm run lint --workspace=client && npm run lint --workspace=server",
     "lint:eslint": "npm run lint:eslint --workspace=client && npm run lint:eslint --workspace=server",
-    "format": "prettier --write \"client/src/**/*.{ts,tsx}\" \"server/src/**/*.ts\" \"client/*.ts\" \"server/*.ts\" \"*.json\"",
-    "format:check": "prettier --check \"client/src/**/*.{ts,tsx}\" \"server/src/**/*.ts\" \"client/*.ts\" \"server/*.ts\" \"*.json\"",
+    "format": "prettier --write \"client/src/**/*.{ts,tsx}\" \"server/src/**/*.ts\" \"client/*.ts\" \"*.json\"",
+    "format:check": "prettier --check \"client/src/**/*.{ts,tsx}\" \"server/src/**/*.ts\" \"client/*.ts\" \"*.json\"",
     "test": "npm run test --workspace=client && npm run test --workspace=server"
+  },
+  "devDependencies": {
+    "prettier": "^3.5.3"
   }
 }

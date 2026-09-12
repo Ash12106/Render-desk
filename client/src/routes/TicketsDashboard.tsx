@@ -1036,7 +1036,9 @@ export function TicketsDashboard() {
                               )}
                             </td>
                             <td className="p-4">
-                              {ticket.status !== 'Resolved' && ticket.status !== 'Closed' && (ticket.slaDueAt || ticket.dueDate) ? (
+                              {ticket.status !== 'Resolved' &&
+                              ticket.status !== 'Closed' &&
+                              (ticket.slaDueAt || ticket.dueDate) ? (
                                 <div
                                   className={`flex items-center gap-1.5 font-mono text-xs font-bold ${
                                     getSlaStatus(ticket.slaDueAt || ticket.dueDate!) === 'overdue'

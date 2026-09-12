@@ -101,9 +101,25 @@ export interface CustomerNotification {
   createdAt: string;
 }
 
-export interface InternalNote { id: string; ticketId: string; author: string; content: string; createdAt: string; }
-export interface CannedReply { id: string; title: string; content: string; category: string; }
-export interface SatisfactionResponse { id: string; score: number; comment: string; createdAt: string; }
+export interface InternalNote {
+  id: string;
+  ticketId: string;
+  author: string;
+  content: string;
+  createdAt: string;
+}
+export interface CannedReply {
+  id: string;
+  title: string;
+  content: string;
+  category: string;
+}
+export interface SatisfactionResponse {
+  id: string;
+  score: number;
+  comment: string;
+  createdAt: string;
+}
 export interface SatisfactionReport {
   responses: number;
   averageScore: number;
@@ -111,7 +127,14 @@ export interface SatisfactionReport {
   recent: Array<SatisfactionResponse & { ticketId?: { title?: string }; customerId?: { name?: string } }>;
 }
 export interface KnowledgeBaseArticle {
-  id: string; title: string; summary: string; content: string; category: string; published: boolean; createdAt: string; updatedAt: string;
+  id: string;
+  title: string;
+  summary: string;
+  content: string;
+  category: string;
+  published: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ApiError {

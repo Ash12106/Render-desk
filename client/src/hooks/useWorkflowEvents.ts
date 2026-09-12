@@ -35,7 +35,10 @@ export function useWorkflowEvents(onEvent: (event: { type: string; ticketId?: st
           const messages = buffer.split('\n\n');
           buffer = messages.pop() || '';
           for (const message of messages) {
-            const data = message.split('\n').find((line) => line.startsWith('data: '))?.slice(6);
+            const data = message
+              .split('\n')
+              .find((line) => line.startsWith('data: '))
+              ?.slice(6);
             if (!data) continue;
             try {
               onEvent(JSON.parse(data));

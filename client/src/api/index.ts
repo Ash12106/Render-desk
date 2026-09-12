@@ -1,4 +1,16 @@
-import { Ticket, Customer, Comment, User, AuditLog, CustomerNotification, CannedReply, InternalNote, KnowledgeBaseArticle, SatisfactionResponse, SatisfactionReport } from '../types';
+import {
+  Ticket,
+  Customer,
+  Comment,
+  User,
+  AuditLog,
+  CustomerNotification,
+  CannedReply,
+  InternalNote,
+  KnowledgeBaseArticle,
+  SatisfactionResponse,
+  SatisfactionReport,
+} from '../types';
 
 export async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const authUserStr = localStorage.getItem('auth_user');
@@ -143,16 +155,28 @@ export const api = {
   },
   getInternalNotes: (ticketId: string) => fetchJson<InternalNote[]>(`/api/tickets/${ticketId}/internal-notes`),
   createInternalNote: (ticketId: string, content: string) =>
-    fetchJson<InternalNote>(`/api/tickets/${ticketId}/internal-notes`, { method: 'POST', body: JSON.stringify({ content }) }),
+    fetchJson<InternalNote>(`/api/tickets/${ticketId}/internal-notes`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    }),
   escalateTicket: (ticketId: string, reason: string, level?: number) =>
-    fetchJson<Ticket>(`/api/tickets/${ticketId}/escalations`, { method: 'POST', body: JSON.stringify({ reason, level }) }),
+    fetchJson<Ticket>(`/api/tickets/${ticketId}/escalations`, {
+      method: 'POST',
+      body: JSON.stringify({ reason, level }),
+    }),
   getCannedReplies: () => fetchJson<CannedReply[]>('/api/canned-replies'),
   createCannedReply: (data: { title: string; content: string; category: string }) =>
     fetchJson<CannedReply>('/api/canned-replies', { method: 'POST', body: JSON.stringify(data) }),
-  getKnowledgeBase: (search?: string) => fetchJson<KnowledgeBaseArticle[]>(`/api/knowledge-base${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  getKnowledgeBase: (search?: string) =>
+    fetchJson<KnowledgeBaseArticle[]>(`/api/knowledge-base${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   getAdminKnowledgeBase: () => fetchJson<KnowledgeBaseArticle[]>('/api/admin/knowledge-base'),
-  createKnowledgeBaseArticle: (data: { title: string; summary: string; content: string; category: string; published: boolean }) =>
-    fetchJson<KnowledgeBaseArticle>('/api/admin/knowledge-base', { method: 'POST', body: JSON.stringify(data) }),
+  createKnowledgeBaseArticle: (data: {
+    title: string;
+    summary: string;
+    content: string;
+    category: string;
+    published: boolean;
+  }) => fetchJson<KnowledgeBaseArticle>('/api/admin/knowledge-base', { method: 'POST', body: JSON.stringify(data) }),
   getCustomerSatisfactionReport: () => fetchJson<SatisfactionReport>('/api/admin/reports/customer-satisfaction'),
 
   login: (data: { username: string; password: string }) => {
@@ -238,7 +262,10 @@ export const api = {
   reopenCustomerTicket: (ticketId: string, reason: string) =>
     fetchJson<Ticket>(`/api/customer/tickets/${ticketId}/reopen`, { method: 'POST', body: JSON.stringify({ reason }) }),
   submitCustomerSatisfaction: (ticketId: string, score: number, comment: string) =>
-    fetchJson<SatisfactionResponse>(`/api/customer/tickets/${ticketId}/satisfaction`, { method: 'POST', body: JSON.stringify({ score, comment }) }),
+    fetchJson<SatisfactionResponse>(`/api/customer/tickets/${ticketId}/satisfaction`, {
+      method: 'POST',
+      body: JSON.stringify({ score, comment }),
+    }),
   getCustomerNotifications: () => fetchJson<CustomerNotification[]>('/api/customer/notifications'),
   markCustomerNotificationRead: (id: string) =>
     fetchJson<CustomerNotification>(`/api/customer/notifications/${id}/read`, { method: 'PATCH' }),

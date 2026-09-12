@@ -99,10 +99,27 @@ export function CustomerTicketDetail() {
             }}
           >
             <h2 className="font-mono text-xs font-bold uppercase">Still need help?</h2>
-            <label htmlFor="reopen-reason" className="sr-only">Reason for reopening</label>
-            <textarea id="reopen-reason" value={reopenReason} onChange={(event) => setReopenReason(event.target.value)} rows={2} placeholder="Tell us what is still unresolved..." className="w-full border border-ink rounded p-2 text-sm" />
-            {reopenMutation.isError && <p role="alert" className="text-sm text-danger">{reopenMutation.error.message}</p>}
-            <button type="submit" disabled={reopenReason.trim().length < 3 || reopenMutation.isPending} className="px-3 py-2 rounded bg-ink text-white text-xs font-mono font-bold uppercase disabled:opacity-50">
+            <label htmlFor="reopen-reason" className="sr-only">
+              Reason for reopening
+            </label>
+            <textarea
+              id="reopen-reason"
+              value={reopenReason}
+              onChange={(event) => setReopenReason(event.target.value)}
+              rows={2}
+              placeholder="Tell us what is still unresolved..."
+              className="w-full border border-ink rounded p-2 text-sm"
+            />
+            {reopenMutation.isError && (
+              <p role="alert" className="text-sm text-danger">
+                {reopenMutation.error.message}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={reopenReason.trim().length < 3 || reopenMutation.isPending}
+              className="px-3 py-2 rounded bg-ink text-white text-xs font-mono font-bold uppercase disabled:opacity-50"
+            >
               {reopenMutation.isPending ? 'Reopening...' : 'Reopen ticket'}
             </button>
           </form>
@@ -116,15 +133,47 @@ export function CustomerTicketDetail() {
             }}
           >
             <h2 className="font-mono text-xs font-bold uppercase">How did we do?</h2>
-            <label htmlFor="satisfaction-score" className="text-sm">Rate your support experience</label>
-            <select id="satisfaction-score" value={score} onChange={(event) => setScore(Number(event.target.value))} className="ml-2 border border-ink rounded p-1 text-sm">
-              {[5, 4, 3, 2, 1].map((value) => <option key={value} value={value}>{value} / 5</option>)}
+            <label htmlFor="satisfaction-score" className="text-sm">
+              Rate your support experience
+            </label>
+            <select
+              id="satisfaction-score"
+              value={score}
+              onChange={(event) => setScore(Number(event.target.value))}
+              className="ml-2 border border-ink rounded p-1 text-sm"
+            >
+              {[5, 4, 3, 2, 1].map((value) => (
+                <option key={value} value={value}>
+                  {value} / 5
+                </option>
+              ))}
             </select>
-            <label htmlFor="satisfaction-comment" className="sr-only">Feedback comment</label>
-            <textarea id="satisfaction-comment" value={feedback} onChange={(event) => setFeedback(event.target.value)} rows={2} placeholder="Optional feedback" className="w-full border border-ink rounded p-2 text-sm" />
-            {satisfactionMutation.isError && <p role="alert" className="text-sm text-danger">{satisfactionMutation.error.message}</p>}
-            {satisfactionMutation.isSuccess && <p role="status" className="text-sm text-success">Thank you for your feedback.</p>}
-            <button type="submit" disabled={satisfactionMutation.isPending} className="px-3 py-2 rounded bg-ink text-white text-xs font-mono font-bold uppercase disabled:opacity-50">
+            <label htmlFor="satisfaction-comment" className="sr-only">
+              Feedback comment
+            </label>
+            <textarea
+              id="satisfaction-comment"
+              value={feedback}
+              onChange={(event) => setFeedback(event.target.value)}
+              rows={2}
+              placeholder="Optional feedback"
+              className="w-full border border-ink rounded p-2 text-sm"
+            />
+            {satisfactionMutation.isError && (
+              <p role="alert" className="text-sm text-danger">
+                {satisfactionMutation.error.message}
+              </p>
+            )}
+            {satisfactionMutation.isSuccess && (
+              <p role="status" className="text-sm text-success">
+                Thank you for your feedback.
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={satisfactionMutation.isPending}
+              className="px-3 py-2 rounded bg-ink text-white text-xs font-mono font-bold uppercase disabled:opacity-50"
+            >
               {satisfactionMutation.isPending ? 'Saving...' : 'Send feedback'}
             </button>
           </form>

@@ -13,11 +13,15 @@ export function handleApiError(res: Response, req: Request, err: unknown) {
     error.message?.includes('buffering timed out')
   ) {
     logger.warn('database_request_failed', { requestId: req.requestId, path: req.path });
-    return res.status(503).json({ success: false, message: 'Service temporarily unavailable (database offline)', data: null });
+    return res
+      .status(503)
+      .json({ success: false, message: 'Service temporarily unavailable (database offline)', data: null });
   }
 
   if (error.code === 11000) {
-    return res.status(409).json({ success: false, message: 'An account with these details already exists.', data: null });
+    return res
+      .status(409)
+      .json({ success: false, message: 'An account with these details already exists.', data: null });
   }
   if (error.name === 'CastError' || error.name === 'ValidationError') {
     return res.status(400).json({ success: false, message: 'Invalid request data.', data: null });
